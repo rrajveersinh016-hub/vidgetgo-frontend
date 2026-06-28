@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 import 'review_manager.dart';
+import 'remote_config_service.dart';
 
 class DownloaderService {
   final Dio _dio = Dio();
@@ -77,7 +78,8 @@ class DownloaderService {
   // ─────────────────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> fetchVideoInfo(String url) async {
     try {
-      const String backendUrl = 'https://vidgetgo-backend.onrender.com';
+      // Live backend URL — can be changed remotely from Firebase Console
+      final String backendUrl = RemoteConfigService().backendUrl;
       final bool isYouTube =
           url.contains('youtube.com') || url.contains('youtu.be');
       final bool isPinterest =

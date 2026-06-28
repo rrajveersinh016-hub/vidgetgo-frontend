@@ -8,6 +8,7 @@ import 'app.dart';
 import 'data/models/download_item.dart';
 import 'data/services/app_open_ad_manager.dart';
 import 'data/services/update_checker.dart';
+import 'data/services/remote_config_service.dart';
 
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -18,6 +19,9 @@ void main() async {
   // Initialize Firebase safely — app will not crash even if this fails
   try {
     await Firebase.initializeApp();
+
+    // Initialize Remote Config (maintenance mode, banners, backend URL)
+    await RemoteConfigService().initialize();
 
     // Catch synchronous Flutter framework/widget errors
     FlutterError.onError = (errorDetails) {
