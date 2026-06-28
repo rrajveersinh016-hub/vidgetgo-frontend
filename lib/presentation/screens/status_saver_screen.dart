@@ -1166,13 +1166,15 @@ class _StatusPreviewOverlayState extends State<StatusPreviewOverlay> {
     if (widget.isVideo) {
       _videoController = VideoPlayerController.file(widget.file)
         ..initialize().then((_) {
-          if (mounted) {
+          if (mounted && _videoController != null) {
             setState(() {
               _isInitialized = true;
             });
-            _videoController!.play();
-            _videoController!.setLooping(true);
+            _videoController?.play();
+            _videoController?.setLooping(true);
           }
+        }).catchError((e) {
+          debugPrint('Video controller init error: $e');
         });
     }
   }
