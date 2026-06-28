@@ -1,6 +1,9 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'app.dart';
 import 'data/models/download_item.dart';
 import 'data/services/app_open_ad_manager.dart';
@@ -11,7 +14,25 @@ final navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // Initialize Firebase safely — app will not crash even if this fails
+  try {
+    await Firebase.initializeApp();
+
+    // Catch synchronous Flutter framework/widget errors
+    FlutterError.onError = (errorDetails) {
+      FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+    };
+
+    // Catch asynchronous / background errors (network, isolates, etc.)
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+  } catch (e) {
+    debugPrint('Firebase initialization failed (non-fatal): $e');
+  }
+
   try {
     // Initialize Hive engine (synchronous memory setup is extremely fast)
     await Hive.initFlutter();

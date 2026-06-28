@@ -19,3 +19,13 @@
 
 # Video Playback intents
 -keep class androidx.core.content.FileProvider { *; }
+
+# Firebase Core
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.internal.firebase** { *; }
+
+# Firebase Crashlytics
+-keepattributes SourceFile,LineNumberTable
+-keep public class * extends java.lang.Exception
+-keep class com.crashlytics.** { *; }
+-dontwarn com.crashlytics.**
