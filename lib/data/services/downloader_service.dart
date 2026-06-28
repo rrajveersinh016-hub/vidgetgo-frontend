@@ -75,7 +75,7 @@ class DownloaderService {
   // Public entry point — always returns a List so callers handle single items
   // and carousels uniformly.
   // ─────────────────────────────────────────────────────────────────────────
-  Future<List<Map<String, dynamic>>> fetchVideoInfo(String url) async {
+  Future<Map<String, dynamic>> fetchVideoInfo(String url) async {
     try {
       const String backendUrl = 'https://vidgetgo-backend.onrender.com';
       final bool isYouTube =
@@ -84,13 +84,13 @@ class DownloaderService {
           url.contains('pinterest.com') || url.contains('pin.it');
 
       if (isYouTube) {
-        return [await _fetchYouTubeInfo(url)];
+        return await _fetchYouTubeInfo(url);
       }
 
       if (isPinterest) {
         try {
           // debugPrint('Attempting client-side Pinterest extraction...');
-          return [await _fetchPinterestClientSide(url)];
+          return await _fetchPinterestClientSide(url);
         } catch (e) {
           // debugPrint('Client-side Pinterest failed, falling back to backend: $e');
         }
@@ -127,9 +127,9 @@ class DownloaderService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Parses a backend response (single item OR carousel) → always a List.
+  // Parses a backend response (single item OR carousel) → returns Map.
   // ─────────────────────────────────────────────────────────────────────────
-  List<Map<String, dynamic>> _parseBackendResponse(Map<String, dynamic> data) {
+  Map<String, dynamic> _parseBackendResponse(Map<String, dynamic> data) {
     final List<dynamic>? mediaUrls = data['media_urls'] as List<dynamic>?;
     final String topMediaType = (data['media_type'] as String? ?? '').toLowerCase();
     final String title = data['Video Title'] ?? data['title'] ?? '';
@@ -137,11 +137,8 @@ class DownloaderService {
 
     // 1. Primary path: Parse media_urls list (Instaloader/Carousel/Modern backends)
     if (mediaUrls != null && mediaUrls.isNotEmpty) {
-      final List<Map<String, dynamic>> items = [];
-      for (int i = 0; i < mediaUrls.length; i++) {
-        final String url = (mediaUrls[i] as String? ?? '').trim();
-        if (url.isEmpty) continue;
-
+      final String url = (mediaUrls[0] as String? ?? '').trim();
+      if (url.isNotEmpty) {
         // Sniff if this specific URL is a photo
         final urlPath = url.toLowerCase().split('?').first;
         final bool isPhotoUrl = urlPath.endsWith('.jpg') ||
@@ -152,20 +149,16 @@ class DownloaderService {
             topMediaType == 'image';
 
         final String baseTitle = title.isNotEmpty ? title : (isPhotoUrl ? 'photo' : 'video');
-        final String itemTitle = mediaUrls.length > 1 ? '${baseTitle}_${i + 1}' : baseTitle;
 
-        items.add({
+        return {
           'status': 'stream',
           'url': url,
-          'title': itemTitle,
+          'title': baseTitle,
           'thumbnail': thumbnail,
           'quality': isPhotoUrl ? 'Original' : 'best',
           'hasAudio': !isPhotoUrl,
           'media_type': isPhotoUrl ? 'photo' : 'video',
-        });
-      }
-      if (items.isNotEmpty) {
-        return items;
+        };
       }
     }
 
@@ -189,7 +182,7 @@ class DownloaderService {
       if (downloadUrl.isNotEmpty) {
         final bool isPhoto = topMediaType == 'photo' || topMediaType == 'image';
         final String baseTitle = title.isNotEmpty ? title : (isPhoto ? 'photo' : 'video');
-        return [{
+        return {
           'status': 'stream',
           'url': downloadUrl,
           'title': baseTitle,
@@ -197,7 +190,7 @@ class DownloaderService {
           'quality': isPhoto ? 'Original' : (bestFormat['Resolution'] ?? 'best'),
           'hasAudio': isPhoto ? false : (bestFormat['Has Audio'] ?? false),
           'media_type': isPhoto ? 'photo' : 'video',
-        }];
+        };
       }
     }
 
@@ -210,7 +203,7 @@ class DownloaderService {
     if (rawUrl.isNotEmpty) {
       final bool isPhoto = topMediaType == 'photo' || topMediaType == 'image';
       final String baseTitle = title.isNotEmpty ? title : (isPhoto ? 'photo' : 'video');
-      return [{
+      return {
         'status': 'stream',
         'url': rawUrl,
         'title': baseTitle,
@@ -218,7 +211,7 @@ class DownloaderService {
         'quality': isPhoto ? 'Original' : 'best',
         'hasAudio': !isPhoto,
         'media_type': isPhoto ? 'photo' : 'video',
-      }];
+      };
     }
 
     throw Exception('Could not extract media – no download URL found');

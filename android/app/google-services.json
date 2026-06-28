@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "968274812431",
+    "project_id": "loophole-1010",
+    "storage_bucket": "loophole-1010.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:968274812431:android:15070ece07aabd9b654d7a",
+        "android_client_info": {
+          "package_name": "com.loophole.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBt8KobhQtvT8oJf9i3nWNbuYiFg60FQiw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

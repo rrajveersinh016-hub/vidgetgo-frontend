@@ -259,6 +259,13 @@ class HomeViewModel extends ChangeNotifier {
         _isProcessing = false;
         return;
       }
+
+      // Preemptive block for photos/carousels (urls containing /p/)
+      if (url.contains('/p/')) {
+        _setError('PHOTOS_NOT_SUPPORTED', onError);
+        _isProcessing = false;
+        return;
+      }
       
       // Check duplicate
       final isDup = await _repo.isDuplicate(url);
@@ -277,8 +284,8 @@ class HomeViewModel extends ChangeNotifier {
         notifyListeners();
 
         try {
-          // Fetch media info — returns a List (single item or carousel)
-          final List<Map<String, dynamic>> mediaItems =
+          // Fetch media info — returns a single Map
+          final Map<String, dynamic> info =
               await _downloader.fetchVideoInfo(url).timeout(
             const Duration(seconds: 30),
             onTimeout: () {
@@ -286,25 +293,17 @@ class HomeViewModel extends ChangeNotifier {
             },
           );
 
-          // Determine if any item is a video (needs format popup)
-          final bool hasAnyVideo =
-              mediaItems.any((m) => (m['media_type'] as String? ?? '') != 'photo');
-
+          final bool isPhotoMedia =
+              (info['media_type'] as String? ?? '') == 'photo';
           bool audioOnly = false;
 
-          if (hasAnyVideo && context != null && context.mounted) {
-            // Show format selection once for the whole batch
+          if (!isPhotoMedia && context != null && context.mounted) {
+            // Show format selection for video content
             logoState = LoopHoleState.idle;
             notifyListeners();
 
-            final firstVideoTitle = mediaItems
-                .firstWhere(
-                    (m) => (m['media_type'] as String? ?? '') != 'photo',
-                    orElse: () => mediaItems.first)['title'] as String? ??
-                'Media';
-
             final chosenAudioOnly =
-                await _showFormatSelectionSheet(context, firstVideoTitle);
+                await _showFormatSelectionSheet(context, info['title'] as String? ?? 'Media');
             if (chosenAudioOnly == null) {
               // Cancelled
               logoState = LoopHoleState.idle;
@@ -320,60 +319,50 @@ class HomeViewModel extends ChangeNotifier {
             notifyListeners();
           }
 
-          final int total = mediaItems.length;
+          // Per-item extension
+          final String extension =
+              isPhotoMedia ? 'jpg' : (audioOnly ? 'm4a' : 'mp4');
+          final String filename =
+              'Media_${DateTime.now().millisecondsSinceEpoch}.$extension';
 
-          for (int i = 0; i < total; i++) {
-            final info = mediaItems[i];
-            final bool isPhotoMedia =
-                (info['media_type'] as String? ?? '') == 'photo';
+          // Save to DB immediately
+          final item = DownloadItem()
+            ..id = DateTime.now().millisecondsSinceEpoch.toString()
+            ..url = url
+            ..title = info['title'] as String? ?? filename
+            ..platform = detectedPlatform
+            ..quality = isPhotoMedia
+                ? 'Photo'
+                : (audioOnly ? 'Audio' : (info['quality'] as String? ?? 'max'))
+            ..filePath = ''
+            ..thumbnailUrl = info['thumbnail'] as String? ?? ''
+            ..status = DownloadItem.downloading
+            ..fileSize = 0
+            ..createdAt = DateTime.now();
+          await _repo.save(item);
 
-            // Per-item extension
-            final String extension =
-                isPhotoMedia ? 'jpg' : (audioOnly ? 'm4a' : 'mp4');
-            final String filename =
-                'Media_${DateTime.now().millisecondsSinceEpoch}.$extension';
+          // Download with progress
+          final filePath = await _downloader.downloadFile(
+            info['url'] as String,
+            info['title'] as String? ?? (isPhotoMedia ? 'photo' : 'video'),
+            detectedPlatform,
+            (progress) {
+              downloadProgress = progress;
+              notifyListeners();
+            },
+            audioOnly: isPhotoMedia ? false : audioOnly,
+            isPhoto: isPhotoMedia,
+          );
 
-            // Save to DB immediately
-            final item = DownloadItem()
-              ..id = '${DateTime.now().millisecondsSinceEpoch}_$i'
-              ..url = url
-              ..title = info['title'] as String? ?? filename
-              ..platform = detectedPlatform
-              ..quality = isPhotoMedia
-                  ? 'Photo'
-                  : (audioOnly ? 'Audio' : (info['quality'] as String? ?? 'max'))
-              ..filePath = ''
-              ..thumbnailUrl = info['thumbnail'] as String? ?? ''
-              ..status = DownloadItem.downloading
-              ..fileSize = 0
-              ..createdAt = DateTime.now();
-            await _repo.save(item);
-
-            // Download with progress scaled to this item's slice
-            final filePath = await _downloader.downloadFile(
-              info['url'] as String,
-              info['title'] as String? ?? (isPhotoMedia ? 'photo' : 'video'),
-              detectedPlatform,
-              (progress) {
-                // Overall progress = completed items + fraction of current
-                downloadProgress = (i + progress) / total;
-                notifyListeners();
-              },
-              audioOnly: isPhotoMedia ? false : audioOnly,
-              isPhoto: isPhotoMedia,
-            );
-
-            // Update DB with completed status
-            final File savedFile = File(filePath);
-            if (await savedFile.exists()) {
-              item.fileSize = await savedFile.length();
-            }
-            item.filePath = filePath;
-            item.status = DownloadItem.completed;
-            await _repo.save(item);
+          // Update DB with completed status
+          final File savedFile = File(filePath);
+          if (await savedFile.exists()) {
+            item.fileSize = await savedFile.length();
           }
+          item.filePath = filePath;
+          item.status = DownloadItem.completed;
+          await _repo.save(item);
 
-          // All items done
           HapticFeedback.vibrate();
           logoState = LoopHoleState.success;
           downloadProgress = 1.0;
@@ -426,14 +415,16 @@ class HomeViewModel extends ChangeNotifier {
   
   void _setError(String message, Function(String)? onError) {
     // Map technical errors and raw exceptions into user-friendly copy
-    String userFriendlyMsg = message;
+    String userFriendlyMsg = 'Download failed. Please check the link and try again.';
     final msgLower = message.toLowerCase();
 
-    if (msgLower.contains('exception:') || msgLower.contains('dioexception')) {
+    if (message == 'PHOTOS_NOT_SUPPORTED') {
+      userFriendlyMsg = 'Photos & carousels are not supported. Video downloads only.';
+    } else if (msgLower.contains('exception:') || msgLower.contains('dioexception')) {
       if (msgLower.contains('403') ||
           msgLower.contains('401') ||
           msgLower.contains('private')) {
-        userFriendlyMsg = 'Video is private or inaccessible';
+        userFriendlyMsg = 'Private account media is not supported. Please use a public link.';
       } else if (msgLower.contains('timeout') ||
           msgLower.contains('timed out')) {
         userFriendlyMsg = 'Extraction timed out. Try again.';
@@ -449,8 +440,6 @@ class HomeViewModel extends ChangeNotifier {
       } else if (msgLower.contains('no video streams') ||
           msgLower.contains('no download url')) {
         userFriendlyMsg = 'Could not extract video stream';
-      } else {
-        userFriendlyMsg = 'Failed to download media';
       }
     } else if (msgLower.contains('invalid link') ||
         msgLower.contains('no valid link')) {

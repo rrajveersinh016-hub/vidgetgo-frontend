@@ -121,7 +121,14 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
           borderRadius: BorderRadius.circular(12),
           side: const BorderSide(color: Color(0xFFFF3B3B), width: 1),
         ),
-        duration: const Duration(seconds: 3),
+        duration: const Duration(minutes: 5), // Keep visible while ads play
+        action: SnackBarAction(
+          label: 'OK',
+          textColor: const Color(0xFFFF3B3B),
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          },
+        ),
       ),
     );
   }
