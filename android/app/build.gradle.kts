@@ -32,8 +32,8 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.0.5"
+        versionCode = 15
+        versionName = "1.0.7"
     }
 
     val keystorePropertiesFile = rootProject.file("key.properties")

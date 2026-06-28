@@ -2,7 +2,7 @@ name: loophole
 description: LoopHole - A clean, fast, minimal dark-themed video downloader app.
 
 publish_to: 'none'
-version: 1.0.5+10
+version: 1.0.7+15
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
