@@ -16,6 +16,7 @@ class AppOpenAdManager {
   bool _isColdStart = true;
   DateTime? _lastShowTime;
   DateTime? _backgroundTime;
+  final DateTime _appLaunchTime = DateTime.now();
 
   void appWentToBackground() {
     _backgroundTime = DateTime.now();
@@ -80,7 +81,12 @@ class AppOpenAdManager {
           debugPrint("App Open: Loaded successfully.");
           if (_isColdStart) {
             _isColdStart = false;
-            showAdIfAvailable();
+            final elapsed = DateTime.now().difference(_appLaunchTime);
+            if (elapsed.inSeconds <= 3) {
+              showAdIfAvailable();
+            } else {
+              debugPrint("App Open: Cold start ad loaded too late (${elapsed.inSeconds}s), keeping in cache.");
+            }
           }
         },
         onAdFailedToLoad: (error) {

@@ -11,12 +11,10 @@ class AdService {
 
   bool isPremium = false;
   bool isFullScreenAdShowing = false;
-  final ValueNotifier<bool> isSdkInitialized = ValueNotifier<bool>(false);
   
   InterstitialAd? _interstitialAd;
   bool _isInterstitialAdLoading = false;
   int _interstitialRetryAttempts = 0;
-  bool _showOnLoad = false;
 
   RewardedAd? _rewardedAd;
   bool _isRewardedAdLoading = false;
@@ -62,7 +60,6 @@ class AdService {
 
   /// Pre-loads the interstitial ad so it is ready to display immediately.
   void loadInterstitialAd() {
-    if (!isSdkInitialized.value) return;
     if (isPremium || _isInterstitialAdLoading || _interstitialAd != null) return;
     _isInterstitialAdLoading = true;
     debugPrint("Interstitial: Start loading...");
@@ -76,15 +73,10 @@ class AdService {
           _isInterstitialAdLoading = false;
           _interstitialRetryAttempts = 0;
           debugPrint("Interstitial: Loaded successfully.");
-          if (_showOnLoad) {
-            _showOnLoad = false;
-            showInterstitialAd();
-          }
         },
         onAdFailedToLoad: (LoadAdError error) {
           _interstitialAd = null;
           _isInterstitialAdLoading = false;
-          _showOnLoad = false;
           _interstitialRetryAttempts++;
           debugPrint("Interstitial: Failed to load: ${error.message} (code: ${error.code})");
           
@@ -185,20 +177,12 @@ class AdService {
     if (isPremium) return;
     if (_interstitialAd != null) {
       showInterstitialAd();
-    } else {
-      _showOnLoad = true;
-      loadInterstitialAd();
     }
   }
 
-  /// Cancels the startup ad if the user starts a download/process before it loads.
-  void cancelAppStartAd() {
-    _showOnLoad = false;
-  }
 
   /// Pre-loads the rewarded ad.
   void loadRewardedAd() {
-    if (!isSdkInitialized.value) return;
     if (isPremium || _isRewardedAdLoading || _rewardedAd != null) return;
     _isRewardedAdLoading = true;
     debugPrint("Rewarded: Start loading...");
@@ -322,21 +306,9 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
   Timer? _retryTimer;
 
   @override
-  void initState() {
-    super.initState();
-    AdService().isSdkInitialized.addListener(_onSdkInitializedChanged);
-  }
-
-  void _onSdkInitializedChanged() {
-    if (AdService().isSdkInitialized.value && !_isLoaded && !_isLoadingAd) {
-      _loadAd();
-    }
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (AdService().isSdkInitialized.value && !_isLoaded && !_isLoadingAd) {
+    if (!_isLoaded && !_isLoadingAd) {
       _loadAd();
     }
   }
@@ -399,7 +371,6 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
 
   @override
   void dispose() {
-    AdService().isSdkInitialized.removeListener(_onSdkInitializedChanged);
     _retryTimer?.cancel();
     _bannerAd?.dispose();
     super.dispose();

@@ -16,7 +16,6 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-  bool _statusSaverAdShownThisSession = false;
 
   final List<Widget> _pages = [
     const HomeScreen(),
@@ -66,11 +65,11 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
+          final oldIndex = _currentIndex;
           setState(() {
             _currentIndex = index;
           });
-          if (index == 1 && !_statusSaverAdShownThisSession) {
-            _statusSaverAdShownThisSession = true;
+          if (index != oldIndex && (index == 1 || index == 2)) {
             AdService().showInterstitialAd();
           }
         },

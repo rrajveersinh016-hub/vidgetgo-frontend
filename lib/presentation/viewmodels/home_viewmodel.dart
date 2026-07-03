@@ -238,8 +238,7 @@ class HomeViewModel extends ChangeNotifier {
       }
     });
 
-    // Reset app startup ad if it was loading/waiting to display
-    _adService.cancelAppStartAd();
+
 
     try {
       // Pre-flight network verification
@@ -418,11 +417,9 @@ class HomeViewModel extends ChangeNotifier {
   }
 
   void showAdDuringDownload() {
-    Future.delayed(const Duration(seconds: 2), () {
-      if (logoState == LoopHoleState.downloading) {
-        _adService.showInterstitialAd();
-      }
-    });
+    if (logoState == LoopHoleState.downloading) {
+      _adService.showInterstitialAd();
+    }
   }
   
   void _setError(String message, Function(String)? onError) {

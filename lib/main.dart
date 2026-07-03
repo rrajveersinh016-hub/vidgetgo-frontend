@@ -25,6 +25,18 @@ void main() async {
   } catch (e) {
     // debugPrint('Hive init error: $e');
   }
+
+  // Initialize Mobile Ads SDK immediately (running in parallel)
+  try {
+    MobileAds.instance.initialize();
+  } catch (e) {
+    debugPrint("Mobile Ads initialization failed: $e");
+  }
+  
+  // Preload ads immediately (Google Mobile Ads SDK queues them internally)
+  AppOpenAdManager().init();
+  AdService().loadInterstitialAd();
+  AdService().loadRewardedAd();
   
   try {
     // Disable runtime font fetching to prevent offline crashes
@@ -45,17 +57,7 @@ void main() async {
 
 Future<void> _initNonCriticalServices() async {
   try {
-    // 1. Start Mobile Ads SDK initialization in parallel immediately
-    MobileAds.instance.initialize().then((_) {
-      debugPrint("Mobile Ads SDK initialized successfully.");
-      AdService().isSdkInitialized.value = true;
-      AppOpenAdManager().init();
-      // Preload ads immediately now that SDK is ready
-      AdService().loadInterstitialAd();
-      AdService().loadRewardedAd();
-    });
-
-    // 2. Initialize Firebase and Remote Config safely
+    // Initialize Firebase and Remote Config safely
     try {
       await Firebase.initializeApp();
 
