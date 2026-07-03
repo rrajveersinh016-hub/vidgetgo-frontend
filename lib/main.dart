@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:google_fonts/google_fonts.dart';
+
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -38,18 +38,11 @@ void main() async {
   AdService().loadInterstitialAd();
   AdService().loadRewardedAd();
   
-  try {
-    // Disable runtime font fetching to prevent offline crashes
-    GoogleFonts.config.allowRuntimeFetching = false;
-
-    runApp(
-      const AppLifecycleReactor(
-        child: LoopHoleApp(),
-      ),
-    );
-  } catch (e) {
-    debugPrint('GoogleFonts config error: $e');
-  }
+  runApp(
+    const AppLifecycleReactor(
+      child: LoopHoleApp(),
+    ),
+  );
 
   // Kick off non-critical initializations in the background
   _initNonCriticalServices();
@@ -76,8 +69,12 @@ Future<void> _initNonCriticalServices() async {
 
       // Catch asynchronous / background errors (network, isolates, etc.)
       PlatformDispatcher.instance.onError = (error, stack) {
-        if (error.toString().contains('Failed to load font')) {
-          return true;
+        final errStr = error.toString();
+        if (errStr.contains('Failed to load font') ||
+            errStr.contains('firebase_remote_config') ||
+            errStr.contains('Unable to connect to the server')) {
+          debugPrint('Suppressed non-fatal background error: $error');
+          return true; // silently ignore background network/font errors
         }
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
         return true;

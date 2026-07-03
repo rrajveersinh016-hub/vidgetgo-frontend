@@ -57,10 +57,19 @@ class RemoteConfigService {
 
       // Listen for real-time updates (e.g., you turn on maintenance mode
       // mid-session and users get it without restarting app)
-      _remoteConfig!.onConfigUpdated.listen((event) async {
-        await _remoteConfig!.activate();
-        debugPrint('RemoteConfig updated: ${event.updatedKeys}');
-      });
+      _remoteConfig!.onConfigUpdated.listen(
+        (event) async {
+          try {
+            await _remoteConfig!.activate();
+            debugPrint('RemoteConfig updated: ${event.updatedKeys}');
+          } catch (e) {
+            debugPrint('RemoteConfig activation failed: $e');
+          }
+        },
+        onError: (error) {
+          debugPrint('RemoteConfig update stream error: $error');
+        },
+      );
     } catch (e) {
       debugPrint('RemoteConfig init failed (non-fatal): $e');
     }
