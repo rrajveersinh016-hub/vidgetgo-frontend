@@ -51,7 +51,12 @@ class _MainScreenState extends State<MainScreen> {
           if (bannerMessage.isNotEmpty)
             _AppBanner(message: bannerMessage, type: bannerType),
 
-          Expanded(child: _pages[_currentIndex]),
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: _pages,
+            ),
+          ),
           SafeArea(
             top: false,
             child: AdService().buildBannerAd(),

@@ -138,8 +138,12 @@ class MainActivity : FlutterFragmentActivity() {
                             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
-                        startActivity(intent)
-                        result.success(true)
+                        try {
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("LAUNCH_FAILED", "No app available to open this file format: ${e.message}", null)
+                        }
                     } else {
                         result.error("FILE_NOT_FOUND", "File does not exist: $path", null)
                     }
@@ -195,21 +199,31 @@ class MainActivity : FlutterFragmentActivity() {
                                     retriever.setDataSource(path)
                                     val bitmap = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
                                     if (bitmap != null) {
-                                        val stream = java.io.ByteArrayOutputStream()
-                                        // Scale down for faster grid rendering
-                                        val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
-                                            bitmap, 
-                                            300, 
-                                            (300.toFloat() / bitmap.width * bitmap.height).toInt(), 
-                                            true
-                                        )
-                                        scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
-                                        val byteArray = stream.toByteArray()
-                                        runOnUiThread {
-                                            result.success(byteArray)
+                                        val width = bitmap.width
+                                        val height = bitmap.height
+                                        if (width > 0 && height > 0) {
+                                            val stream = java.io.ByteArrayOutputStream()
+                                            val scaledHeight = (300.toFloat() / width * height).toInt()
+                                            val finalHeight = if (scaledHeight > 0) scaledHeight else 1
+                                            val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
+                                                bitmap, 
+                                                300, 
+                                                finalHeight, 
+                                                true
+                                            )
+                                            scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
+                                            val byteArray = stream.toByteArray()
+                                            runOnUiThread {
+                                                result.success(byteArray)
+                                            }
+                                            bitmap.recycle()
+                                            scaledBitmap.recycle()
+                                        } else {
+                                            runOnUiThread {
+                                                result.error("INVALID_DIMENSIONS", "Bitmap dimensions are invalid", null)
+                                            }
+                                            bitmap.recycle()
                                         }
-                                        bitmap.recycle()
-                                        scaledBitmap.recycle()
                                     } else {
                                         runOnUiThread {
                                             result.error("NO_FRAME", "Could not extract frame", null)
@@ -679,15 +693,30 @@ class MainActivity : FlutterFragmentActivity() {
                     uri = Uri.fromFile(targetFile)
                 }
 
+                var finalPath: String? = null
                 if (uri != null) {
-                    val finalPath = if (android.os.Build.VERSION.SDK_INT >= 29) {
-                        "/storage/emulated/0/$relativePath/$name"
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        val projection = arrayOf(MediaStore.MediaColumns.DATA)
+                        contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                            if (cursor.moveToFirst()) {
+                                val dataIndex = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATA)
+                                finalPath = cursor.getString(dataIndex)
+                            }
+                        }
+                        if (finalPath == null) {
+                            finalPath = "/storage/emulated/0/$relativePath/$name"
+                        }
                     } else {
                         val galleryDirName = if (isPhoto) "Pictures" else "DCIM"
-                        File(android.os.Environment.getExternalStorageDirectory(), "$galleryDirName/LoopHole/$name").absolutePath
+                        finalPath = File(android.os.Environment.getExternalStorageDirectory(), "$galleryDirName/LoopHole/$name").absolutePath
                     }
+                    val resultPath = finalPath
                     runOnUiThread {
-                        result.success(finalPath)
+                        if (resultPath != null) {
+                            result.success(resultPath)
+                        } else {
+                            result.error("SAVE_FAILED", "Failed to resolve final path", null)
+                        }
                     }
                 } else {
                     runOnUiThread {

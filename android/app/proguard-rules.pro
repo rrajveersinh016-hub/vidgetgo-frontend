@@ -29,3 +29,10 @@
 -keep public class * extends java.lang.Exception
 -keep class com.crashlytics.** { *; }
 -dontwarn com.crashlytics.**
+
+# Hive Database Models and Adapters Protection
+-keep class * extends hive.HiveObject { *; }
+-keep class * extends hive.TypeAdapter { *; }
+-keep class com.loophole.app.data.models.DownloadItem { *; }
+-keep class com.loophole.app.data.models.DownloadItemAdapter { *; }
+-dontwarn hive.**

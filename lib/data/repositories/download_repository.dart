@@ -43,8 +43,13 @@ class DownloadRepository {
     if (item != null) {
       // Delete actual file if not web
       if (!kIsWeb && item.filePath.isNotEmpty) {
-        final file = File(item.filePath);
-        if (await file.exists()) await file.delete();
+        try {
+          final file = File(item.filePath);
+          if (await file.exists()) await file.delete();
+        } catch (_) {
+          // Silently catch file deletion errors (e.g. locked files)
+          // to guarantee the database record gets cleaned up regardless.
+        }
       }
       await box.delete(id);
     }

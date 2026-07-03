@@ -1,30 +1,23 @@
 enum PlatformType { youtube, instagram, facebook, pinterest, unknown }
 
 PlatformType detectPlatform(String url) {
-  final uri = Uri.parse(url.toLowerCase());
+  final cleanUrl = url.trim().toLowerCase();
+  final uri = Uri.tryParse(cleanUrl);
+  if (uri == null) return PlatformType.unknown;
   final host = uri.host;
-  final path = uri.path;
   
   // YouTube
-  if (host.contains('youtube.com') || host.contains('youtu.be')) {
-    if (path.contains('/watch') || 
-        path.contains('/shorts/') || 
-        host == 'youtu.be') {
-      return PlatformType.youtube;
-    }
+  if (host.contains('youtube.com') || host.contains('youtu.be') || host.contains('youtube.be')) {
+    return PlatformType.youtube;
   }
   
   // Instagram  
   if (host.contains('instagram.com')) {
-    if (path.contains('/p/') || 
-        path.contains('/reel/') || 
-        path.contains('/tv/')) {
-      return PlatformType.instagram;
-    }
+    return PlatformType.instagram;
   }
   
   // Facebook
-  if (host.contains('facebook.com') || host.contains('fb.watch')) {
+  if (host.contains('facebook.com') || host.contains('fb.watch') || host.contains('fb.com')) {
     return PlatformType.facebook;
   }
   

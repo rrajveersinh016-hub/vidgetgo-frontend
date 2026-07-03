@@ -316,6 +316,7 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
   BannerAd? _bannerAd;
   bool _isLoaded = false;
   bool _isLoadingAd = false;
+  Timer? _retryTimer;
 
   @override
   void didChangeDependencies() {
@@ -327,6 +328,8 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
 
   Future<void> _loadAd() async {
     _isLoadingAd = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     debugPrint("Banner ad loading initiated...");
     
     // Get an AnchoredAdaptiveBannerAdSize before loading the ad.
@@ -337,6 +340,11 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
 
     if (size == null) {
       debugPrint("Unable to get height of anchored banner.");
+      if (mounted) {
+        setState(() {
+          _isLoadingAd = false;
+        });
+      }
       return;
     }
 
@@ -362,7 +370,8 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
               _isLoadingAd = false;
             });
           }
-          Future.delayed(const Duration(seconds: 60), () {
+          _retryTimer?.cancel();
+          _retryTimer = Timer(const Duration(seconds: 60), () {
             if (mounted) {
               setState(() { _isLoadingAd = true; });
               _loadAd();
@@ -375,6 +384,7 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
 
   @override
   void dispose() {
+    _retryTimer?.cancel();
     _bannerAd?.dispose();
     super.dispose();
   }

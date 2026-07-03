@@ -99,6 +99,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   }
 
   void _confirmDelete(BuildContext context, DownloadItem item) {
+    _dontAskAgain = false;
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
