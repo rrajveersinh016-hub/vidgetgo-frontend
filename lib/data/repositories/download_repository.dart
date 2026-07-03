@@ -31,10 +31,6 @@ class DownloadRepository {
     }
   }
   
-  Future<void> updateProgress(String id, double progress) async {
-    // progress stored in memory only - not persisted
-  }
-  
   Future<List<DownloadItem>> getAll() async {
     final box = await _getBox();
     return box.values.toList()

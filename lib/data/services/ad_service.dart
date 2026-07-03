@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'dart:async';
 
 class AdService {
   static final AdService _instance = AdService._internal();
@@ -42,7 +44,7 @@ class AdService {
   bool get isCooldownSatisfied {
     if (_lastFullScreenCloseTime == null) return true;
     final elapsed = DateTime.now().difference(_lastFullScreenCloseTime!);
-    return elapsed.inSeconds >= 5;
+    return elapsed.inSeconds >= 20;
   }
 
   /// Updates the caching state. Called by HomeViewModel upon load/upgrade.
@@ -116,7 +118,7 @@ class AdService {
       return;
     }
     
-    if (_interstitialAd != null) {
+    void displayAd() {
       debugPrint("Unity bidding request sent");
       debugPrint("Interstitial showing");
       
@@ -143,11 +145,36 @@ class AdService {
           if (onDismissed != null) onDismissed();
         },
       );
-      _interstitialAd!.show();
+      try {
+        _interstitialAd!.show();
+      } on PlatformException catch (e) {
+        debugPrint('Interstitial ad failed to show (PlatformException): $e');
+        if (onDismissed != null) onDismissed();
+      } catch (e) {
+        debugPrint('Interstitial ad show error: $e');
+        if (onDismissed != null) onDismissed();
+      }
+    }
+    
+    if (_interstitialAd != null) {
+      displayAd();
     } else {
-      debugPrint("Interstitial failed: Ad not ready. Initiating load...");
+      debugPrint("Interstitial failed: Ad not ready. Initiating load & waiting...");
       loadInterstitialAd();
-      if (onDismissed != null) onDismissed();
+      
+      // Wait up to 3 seconds for ad to load
+      int attempts = 0;
+      Timer.periodic(const Duration(milliseconds: 500), (timer) {
+        attempts++;
+        if (_interstitialAd != null) {
+          timer.cancel();
+          displayAd();
+        } else if (attempts >= 6) {
+          timer.cancel();
+          debugPrint("Interstitial failed: Still not ready after 3 seconds.");
+          if (onDismissed != null) onDismissed();
+        }
+      });
     }
   }
 
@@ -213,11 +240,7 @@ class AdService {
       return;
     }
 
-    if (!isCooldownSatisfied) {
-      debugPrint("Rewarded ad failed to show: ad cooldown active.");
-      onError("Please wait a few seconds before watching another ad.");
-      return;
-    }
+
 
     if (_rewardedAd != null) {
       debugPrint("Unity bidding request sent");
@@ -254,12 +277,18 @@ class AdService {
         },
       );
       
-      _rewardedAd!.show(
-        onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
-          debugPrint("Rewarded ad reward granted");
-          earnedReward = true;
-        },
-      );
+      try {
+        _rewardedAd!.show(
+          onUserEarnedReward: (AdWithoutView ad, RewardItem reward) {
+            debugPrint("Rewarded ad reward granted");
+            earnedReward = true;
+          },
+        );
+      } on PlatformException catch (e) {
+        debugPrint('Rewarded ad failed to show (PlatformException): $e');
+      } catch (e) {
+        debugPrint('Rewarded ad show error: $e');
+      }
     } else {
       debugPrint("Rewarded ad failed: Ad not ready. Initiating load...");
       loadRewardedAd();
@@ -286,31 +315,59 @@ class _BannerAdWidget extends StatefulWidget {
 class _BannerAdWidgetState extends State<_BannerAdWidget> {
   BannerAd? _bannerAd;
   bool _isLoaded = false;
+  bool _isLoadingAd = false;
 
   @override
-  void initState() {
-    super.initState();
-    _loadAd();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_isLoaded && !_isLoadingAd) {
+      _loadAd();
+    }
   }
 
-  void _loadAd() {
+  Future<void> _loadAd() async {
+    _isLoadingAd = true;
     debugPrint("Banner ad loading initiated...");
+    
+    // Get an AnchoredAdaptiveBannerAdSize before loading the ad.
+    // ignore: deprecated_member_use
+    final AnchoredAdaptiveBannerAdSize? size = await AdSize.getCurrentOrientationAnchoredAdaptiveBannerAdSize(
+      MediaQuery.of(context).size.width.truncate(),
+    );
+
+    if (size == null) {
+      debugPrint("Unable to get height of anchored banner.");
+      return;
+    }
+
     _bannerAd = BannerAd(
       adUnitId: widget.adUnitId,
       request: const AdRequest(),
-      size: AdSize.banner,
+      size: size,
       listener: BannerAdListener(
         onAdLoaded: (ad) {
           debugPrint("Banner ad loaded successfully.");
           if (mounted) {
             setState(() {
               _isLoaded = true;
+              _isLoadingAd = false;
             });
           }
         },
         onAdFailedToLoad: (ad, err) {
           debugPrint("Banner ad failed to load: ${err.message} (code: ${err.code})");
           ad.dispose();
+          if (mounted) {
+            setState(() {
+              _isLoadingAd = false;
+            });
+          }
+          Future.delayed(const Duration(seconds: 60), () {
+            if (mounted) {
+              setState(() { _isLoadingAd = true; });
+              _loadAd();
+            }
+          });
         },
       ),
     )..load();
@@ -328,16 +385,16 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
       return const SizedBox.shrink();
     }
 
-    // Wrap in a fixed 50px height container to ensure consistent rendering,
-    // prevent layout shifting, and keep the banner visible at the bottom of the Downloads screen.
-    return Container(
-      height: 50,
-      width: double.infinity,
-      color: Colors.black,
-      alignment: Alignment.center,
-      child: _bannerAd != null && _isLoaded
-          ? AdWidget(ad: _bannerAd!)
-          : const SizedBox.shrink(),
-    );
+    if (_bannerAd != null && _isLoaded) {
+      return Container(
+        height: _bannerAd!.size.height.toDouble(),
+        width: _bannerAd!.size.width.toDouble(),
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: AdWidget(ad: _bannerAd!),
+      );
+    }
+    
+    return const SizedBox.shrink();
   }
 }

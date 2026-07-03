@@ -31,6 +31,7 @@ class RemoteConfigService {
     'force_update': false,
     'force_update_message':
         'A new version is required to continue. Please update LoopHole from the Play Store.',
+    'backup_url': 'https://vidgetgo-backend-3fj0.onrender.com',
   };
 
   Future<void> initialize() async {
@@ -47,7 +48,11 @@ class RemoteConfigService {
       await _remoteConfig!.setDefaults(_defaults);
 
       // Fetch and activate — non-blocking, won't crash if fails
-      await _remoteConfig!.fetchAndActivate();
+      try {
+        await _remoteConfig!.fetchAndActivate();
+      } catch (e) {
+        debugPrint('Remote Config fetch failed: $e');
+      }
 
       // Listen for real-time updates (e.g., you turn on maintenance mode
       // mid-session and users get it without restarting app)
@@ -97,4 +102,9 @@ class RemoteConfigService {
   String get forceUpdateMessage =>
       _remoteConfig?.getString('force_update_message') ??
       _defaults['force_update_message'] as String;
+
+  /// Backup backend URL if primary fails.
+  String get backupUrl =>
+      _remoteConfig?.getString('backup_url') ??
+      _defaults['backup_url'] as String;
 }

@@ -58,7 +58,11 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
 
   Future<void> _requestPermissions() async {
     if (Platform.isAndroid) {
-      await Permission.storage.request();
+      try {
+        await Permission.storage.request();
+      } catch (e) {
+        debugPrint('Permission request failed: $e');
+      }
     }
   }
 
@@ -108,29 +112,34 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
   }
 
   void _showErrorSnackbar(String message) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: const TextStyle(color: Colors.white),
+    if (!mounted) return;
+    try {
+      ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: const TextStyle(color: Colors.white),
+          ),
+          backgroundColor: const Color(0xFF1A1A1A),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFFFF3B3B), width: 1),
+          ),
+          duration: const Duration(seconds: 10), // Reduced from 5 minutes
+          action: SnackBarAction(
+            label: 'OK',
+            textColor: const Color(0xFFFF3B3B),
+            onPressed: () {
+              try {
+                ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+              } catch (_) {}
+            },
+          ),
         ),
-        backgroundColor: const Color(0xFF1A1A1A),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: Color(0xFFFF3B3B), width: 1),
-        ),
-        duration: const Duration(minutes: 5), // Keep visible while ads play
-        action: SnackBarAction(
-          label: 'OK',
-          textColor: const Color(0xFFFF3B3B),
-          onPressed: () {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          },
-        ),
-      ),
-    );
+      );
+    } catch (_) {}
   }
 
   @override
@@ -181,7 +190,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                 child: LoopHoleButton(
                   state: viewModel.logoState,
                   progress: viewModel.downloadProgress,
-                  portalColor: viewModel.currentPlatformColor,
+
                 ),
               ),
             ),
@@ -203,7 +212,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                     }
 
                     final isStatus = viewModel.detectedPlatform.isNotEmpty || viewModel.logoState != LoopHoleState.idle;
-                    final logColor = isStatus ? viewModel.currentPlatformColor : const Color(0xFF555555);
+                    final logColor = isStatus ? const Color(0xFF9D00FF) : const Color(0xFF555555);
 
                     return AnimatedSwitcher(
                       duration: 300.ms,
@@ -222,7 +231,7 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
                               letterSpacing: isStatus ? context.rSize(3.0) : context.rSize(1.5),
                               fontWeight: isStatus ? FontWeight.w800 : FontWeight.w500,
                               shadows: isStatus ? [
-                                BoxShadow(color: viewModel.currentPlatformColor.withValues(alpha: 0.4), blurRadius: context.rSize(12))
+                                BoxShadow(color: const Color(0xFF9D00FF).withValues(alpha: 0.4), blurRadius: context.rSize(12))
                               ] : null,
                             ),
                           ),

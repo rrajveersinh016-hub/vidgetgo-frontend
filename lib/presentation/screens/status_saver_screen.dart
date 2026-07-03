@@ -434,30 +434,65 @@ class _StatusSaverScreenState extends State<StatusSaverScreen> with SingleTicker
 
   Future<bool> _checkAndRequestPermission() async {
     if (Platform.isAndroid) {
-      final storageStatus = await Permission.storage.request();
-      return storageStatus.isGranted;
+      try {
+        // We can use device_info_plus, but I don't know if it's imported.
+        // The user suggested using flutter's platform check or permission_handler handling.
+        // Wait! The user says "Use flutter's Platform check and pass Android version via MethodChannel or use permission_handler's built-in handling"
+        // Actually, Permission.photos and Permission.videos are available in permission_handler.
+        // If we request Permission.storage, on Android 13 it will auto-fail if it's not declared in manifest.
+        // Better:
+        if (await Permission.photos.isRestricted) {
+           // Not Android 13
+        }
+        
+        if (await Permission.storage.isGranted) {
+           return true;
+        }
+        
+        // Let's just request photos, videos, and storage. permission_handler handles SDK levels internally.
+        final statuses = await [
+          Permission.storage,
+          Permission.photos,
+          Permission.videos,
+        ].request();
+
+        return statuses[Permission.storage]?.isGranted == true ||
+               (statuses[Permission.photos]?.isGranted == true && statuses[Permission.videos]?.isGranted == true);
+      } catch (e) {
+        debugPrint('Permission request failed: $e');
+        return false;
+      }
     }
     return false;
   }
 
   Future<bool> _checkPermission() async {
-    return await Permission.storage.isGranted;
+    if (Platform.isAndroid) {
+        return (await Permission.storage.isGranted) ||
+               (await Permission.photos.isGranted && await Permission.videos.isGranted);
+    }
+    return false;
   }
 
   Future<void> _scanAndCacheStatuses() async {
-    if (!_isSaverEnabled) return;
+    if (!mounted) return;
+    try {
+      if (!_isSaverEnabled) return;
 
-    setState(() {
-      _isLoading = true;
-    });
+      if (mounted) {
+        setState(() {
+          _isLoading = true;
+        });
+      }
 
-    if (_useSAF) {
-      try {
+      if (_useSAF) {
         final hasPerm = await _mediaChannel.invokeMethod<bool>('hasFolderPermission', {'type': _safType}) ?? false;
         if (!hasPerm) {
-          setState(() {
-            _isLoading = false;
-          });
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
           return;
         }
 
@@ -465,92 +500,101 @@ class _StatusSaverScreenState extends State<StatusSaverScreen> with SingleTicker
         if (!success) {
           debugPrint("SAF Status Sync failed.");
         }
-      } catch (e) {
-        debugPrint("Error during SAF Status Sync: $e");
-      }
-    } else {
-      final hasPermission = await _checkPermission();
-      if (!hasPermission) {
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
+      } else {
+        final hasPermission = await _checkPermission();
+        if (!hasPermission) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+          }
+          return;
+        }
 
-      final List<Directory> whatsappDirs = [
-        Directory('/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/.Statuses'),
-        Directory('/storage/emulated/0/Android/media/com.whatsapp.w4b/WhatsApp Business/Media/.Statuses'),
-        Directory('/storage/emulated/0/WhatsApp/Media/.Statuses'),
-      ];
+        final List<Directory> whatsappDirs = [
+          Directory('/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media/.Statuses'),
+          Directory('/storage/emulated/0/Android/media/com.whatsapp.w4b/WhatsApp Business/Media/.Statuses'),
+          Directory('/storage/emulated/0/WhatsApp/Media/.Statuses'),
+        ];
 
-      final tempDir = await getTemporaryDirectory();
-      final cacheDir = Directory('${tempDir.path}/StatusSaver');
-      if (!await cacheDir.exists()) {
-        await cacheDir.create(recursive: true);
-      }
+        final tempDir = await getTemporaryDirectory();
+        final cacheDir = Directory('${tempDir.path}/StatusSaver');
+        if (!await cacheDir.exists()) {
+          await cacheDir.create(recursive: true);
+        }
 
-      final prefs = await SharedPreferences.getInstance();
-      bool foundAnyDir = false;
+        final prefs = await SharedPreferences.getInstance();
+        bool foundAnyDir = false;
 
-      for (final dir in whatsappDirs) {
-        if (await dir.exists()) {
-          foundAnyDir = true;
-          try {
-            final List<FileSystemEntity> entities = dir.listSync();
-            for (final entity in entities) {
-              if (entity is File) {
-                final name = entity.uri.pathSegments.last;
-                if (name.startsWith('.')) continue;
-                if (!_isStatusPhoto(name) && !_isStatusVideo(name)) continue;
+        for (final dir in whatsappDirs) {
+          if (await dir.exists()) {
+            foundAnyDir = true;
+            try {
+              final List<FileSystemEntity> entities = await dir.list().toList();
+              for (final entity in entities) {
+                if (entity is File) {
+                  final name = entity.uri.pathSegments.last;
+                  if (name.startsWith('.')) continue;
+                  if (!_isStatusPhoto(name) && !_isStatusVideo(name)) continue;
 
-                final String galleryDirName = _isStatusPhoto(name) ? 'Pictures' : 'DCIM';
-                final galleryFile = File('/storage/emulated/0/$galleryDirName/LoopHole/$name');
-                final cacheFile = File('${cacheDir.path}/$name');
+                  final String galleryDirName = _isStatusPhoto(name) ? 'Pictures' : 'DCIM';
+                  final galleryFile = File('/storage/emulated/0/$galleryDirName/LoopHole/$name');
+                  final cacheFile = File('${cacheDir.path}/$name');
 
-                final isDeleted = prefs.getBool('status_deleted_$name') ?? false;
-                if (!isDeleted && !await cacheFile.exists() && !await galleryFile.exists()) {
-                  final bytes = await entity.readAsBytes();
-                  await cacheFile.writeAsBytes(bytes, flush: true);
-                  await prefs.setInt('status_cache_time_$name', DateTime.now().millisecondsSinceEpoch);
+                  final isDeleted = prefs.getBool('status_deleted_$name') ?? false;
+                  if (!isDeleted && !await cacheFile.exists() && !await galleryFile.exists()) {
+                    final bytes = await entity.readAsBytes();
+                    await cacheFile.writeAsBytes(bytes, flush: true);
+                    await prefs.setInt('status_cache_time_$name', DateTime.now().millisecondsSinceEpoch);
+                  }
+                }
+              }
+            } catch (e) {
+              debugPrint("Error copying statuses from ${dir.path}: $e");
+            }
+          }
+        }
+
+        if (!foundAnyDir) {
+          debugPrint("No WhatsApp Status directories found.");
+        }
+
+        try {
+          if (await cacheDir.exists()) {
+            final List<FileSystemEntity> cachedFiles = await cacheDir.list().toList();
+            final now = DateTime.now().millisecondsSinceEpoch;
+            const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+            for (final file in cachedFiles) {
+              if (file is File) {
+                final name = file.uri.pathSegments.last;
+                final cacheTime = prefs.getInt('status_cache_time_$name') ?? now;
+                if (now - cacheTime > sevenDaysMs) {
+                  await file.delete();
+                  await prefs.remove('status_cache_time_$name');
                 }
               }
             }
-          } catch (e) {
-            debugPrint("Error copying statuses from ${dir.path}: $e");
           }
+        } catch (e) {
+          debugPrint("Error cleaning up statuses: $e");
         }
       }
 
-      if (!foundAnyDir) {
-        debugPrint("No WhatsApp Status directories found.");
+      await _loadCachedFiles();
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
-
-      try {
-        if (await cacheDir.exists()) {
-          final List<FileSystemEntity> cachedFiles = cacheDir.listSync();
-          final now = DateTime.now().millisecondsSinceEpoch;
-          const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-
-          for (final file in cachedFiles) {
-            if (file is File) {
-              final name = file.uri.pathSegments.last;
-              final cacheTime = prefs.getInt('status_cache_time_$name') ?? now;
-              if (now - cacheTime > sevenDaysMs) {
-                await file.delete();
-                await prefs.remove('status_cache_time_$name');
-              }
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint("Error cleaning up statuses: $e");
+    } catch (e) {
+      debugPrint("Error in _scanAndCacheStatuses: $e");
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
-
-    await _loadCachedFiles();
-    setState(() {
-      _isLoading = false;
-    });
   }
 
   bool _isStatusPhoto(String path) {
@@ -571,7 +615,7 @@ class _StatusSaverScreenState extends State<StatusSaverScreen> with SingleTicker
     if (!await cacheDir.exists()) return;
 
     try {
-      final List<FileSystemEntity> files = cacheDir.listSync();
+      final List<FileSystemEntity> files = await cacheDir.list().toList();
       final List<File> photos = [];
       final List<File> videos = [];
       final Map<String, int> cacheTimes = {};
@@ -595,8 +639,27 @@ class _StatusSaverScreenState extends State<StatusSaverScreen> with SingleTicker
         }
       }
 
-      photos.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
-      videos.sort((a, b) => b.lastModifiedSync().compareTo(a.lastModifiedSync()));
+      final Map<String, DateTime> modTimes = {};
+      await Future.wait(files.map((file) async {
+        if (file is File) {
+          try {
+            modTimes[file.path] = await file.lastModified();
+          } catch (_) {
+            modTimes[file.path] = DateTime.fromMillisecondsSinceEpoch(0);
+          }
+        }
+      }));
+
+      photos.sort((a, b) {
+        final timeA = modTimes[a.path] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final timeB = modTimes[b.path] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return timeB.compareTo(timeA);
+      });
+      videos.sort((a, b) {
+        final timeA = modTimes[a.path] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final timeB = modTimes[b.path] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return timeB.compareTo(timeA);
+      });
 
       setState(() {
         _photoFiles = photos;

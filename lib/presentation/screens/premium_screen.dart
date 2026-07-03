@@ -13,6 +13,7 @@ class PremiumScreen extends StatelessWidget {
   void _showUnlockSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.black, // Vantablack
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(context.rSize(24))),
@@ -20,9 +21,15 @@ class PremiumScreen extends StatelessWidget {
       builder: (context) {
         return Consumer<HomeViewModel>(
           builder: (context, viewModel, child) {
-            return Container(
-              padding: EdgeInsets.all(context.rSize(32)),
-              decoration: BoxDecoration(
+            return SingleChildScrollView(
+              child: Container(
+                padding: EdgeInsets.only(
+                  left: context.rSize(32),
+                  right: context.rSize(32),
+                  top: context.rSize(32),
+                  bottom: MediaQuery.of(context).viewInsets.bottom + context.rSize(32),
+                ),
+                decoration: BoxDecoration(
                 color: const Color(0xFF0D0D0D),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(context.rSize(24))),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.1), width: context.rSize(1)),
@@ -37,7 +44,7 @@ class PremiumScreen extends StatelessWidget {
                   ),
                   SizedBox(height: context.rSize(16)),
                   Text(
-                    'Unlock Pro for 3 Days',
+                    'Unlock Pro for 2 Days',
                     style: GoogleFonts.orbitron(
                       fontSize: context.rFont(22),
                       fontWeight: FontWeight.bold,
@@ -46,7 +53,7 @@ class PremiumScreen extends StatelessWidget {
                   ),
                   SizedBox(height: context.rSize(16)),
                   Text(
-                    'Watch 5 short video ads to unlock 3 days of Pro features (Zero Ads).',
+                    'Watch 5 short video ads to unlock 2 days of Pro features (Zero Ads).',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.dmSans(
                       fontSize: context.rFont(14),
@@ -113,7 +120,7 @@ class PremiumScreen extends StatelessWidget {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: const Text(
-                                '✅ Pro Unlocked for 3 Days! Ads Removed.',
+                                '✅ Pro Unlocked for 2 Days! Ads Removed.',
                                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                               ),
                               backgroundColor: Colors.green[800],
@@ -147,6 +154,7 @@ class PremiumScreen extends StatelessWidget {
                   SizedBox(height: context.rSize(20)),
                 ],
               ),
+            ),
             );
           },
         );
@@ -233,7 +241,7 @@ class PremiumScreen extends StatelessWidget {
                     Text(
                       isPremium 
                         ? 'You are currently using LoopHole Pro. Enjoy an ad-free experience.'
-                        : 'Watch 5 short video ads to unlock 3 days of Pro features (Zero Ads).',
+                        : 'Watch 5 short video ads to unlock 2 days of Pro features (Zero Ads).',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.dmSans(
                         fontSize: context.rFont(16),
@@ -345,15 +353,18 @@ class _PremiumCountdownWidgetState extends State<PremiumCountdownWidget> {
   }
 
   void _updateTimeLeft() {
+    final viewModel = Provider.of<HomeViewModel>(context, listen: false);
     setState(() {
       _timeLeft = widget.expiryDate.difference(DateTime.now());
       if (_timeLeft.isNegative || _timeLeft == Duration.zero) {
         _timeLeft = Duration.zero;
         _timer.cancel();
-        // Refresh premium state in ViewModel
-        Provider.of<HomeViewModel>(context, listen: false).loadPremiumState();
       }
     });
+    // Refresh premium state in ViewModel outside setState
+    if (_timeLeft == Duration.zero) {
+      viewModel.loadPremiumState();
+    }
   }
 
   @override

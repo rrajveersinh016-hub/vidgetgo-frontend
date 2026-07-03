@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -16,27 +17,6 @@ final navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase safely — app will not crash even if this fails
-  try {
-    await Firebase.initializeApp();
-
-    // Initialize Remote Config (maintenance mode, banners, backend URL)
-    await RemoteConfigService().initialize();
-
-    // Catch synchronous Flutter framework/widget errors
-    FlutterError.onError = (errorDetails) {
-      FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
-    };
-
-    // Catch asynchronous / background errors (network, isolates, etc.)
-    PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      return true;
-    };
-  } catch (e) {
-    debugPrint('Firebase initialization failed (non-fatal): $e');
-  }
-
   try {
     // Initialize Hive engine (synchronous memory setup is extremely fast)
     await Hive.initFlutter();
@@ -45,16 +25,62 @@ void main() async {
     // debugPrint('Hive init error: $e');
   }
   
-  runApp(
-    const AppLifecycleReactor(
-      child: LoopHoleApp(),
-    ),
-  );
+  try {
+    // Disable runtime font fetching to prevent offline crashes
+    GoogleFonts.config.allowRuntimeFetching = false;
 
-  // Initialize Mobile Ads SDK and App Open Ad Manager in the background
-  MobileAds.instance.initialize().then((_) {
-    AppOpenAdManager().init();
-  });
+    runApp(
+      const AppLifecycleReactor(
+        child: LoopHoleApp(),
+      ),
+    );
+  } catch (e) {
+    debugPrint('GoogleFonts config error: $e');
+  }
+
+  // Kick off non-critical initializations in the background
+  _initNonCriticalServices();
+}
+
+Future<void> _initNonCriticalServices() async {
+  try {
+    // Initialize Firebase safely — app will not crash even if this fails
+    try {
+      await Firebase.initializeApp();
+
+      // Initialize Remote Config (maintenance mode, banners, backend URL)
+      await RemoteConfigService().initialize();
+
+      // Catch synchronous Flutter framework/widget errors
+      FlutterError.onError = (FlutterErrorDetails details) {
+        if (details.exception.toString().contains('Failed to load font') ||
+            details.exception.toString().contains('not found in the application assets')) {
+          debugPrint('Font error caught: ${details.exception}');
+          return; // silently ignore, use system font fallback
+        }
+        FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+      };
+
+      // Catch asynchronous / background errors (network, isolates, etc.)
+      PlatformDispatcher.instance.onError = (error, stack) {
+        if (error.toString().contains('Failed to load font')) {
+          return true;
+        }
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+        return true;
+      };
+    } catch (e) {
+      debugPrint('Firebase initialization failed (non-fatal): $e');
+    }
+
+    // Initialize Mobile Ads SDK and App Open Ad Manager in the background
+    MobileAds.instance.initialize().then((_) {
+      AppOpenAdManager().init();
+    });
+  } catch (e) {
+    debugPrint('Non-critical service init failed: $e');
+    // never crash for non-critical services
+  }
 }
 
 class AppLifecycleReactor extends StatefulWidget {
@@ -72,8 +98,6 @@ class _AppLifecycleReactorState extends State<AppLifecycleReactor> with WidgetsB
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Pre-load the first App Open Ad immediately on app launch
-    AppOpenAdManager().loadAd();
   }
 
   @override
@@ -84,7 +108,9 @@ class _AppLifecycleReactorState extends State<AppLifecycleReactor> with WidgetsB
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.paused) {
+      AppOpenAdManager().appWentToBackground();
+    } else if (state == AppLifecycleState.resumed) {
       AppOpenAdManager().showAdIfAvailable();
       if (!_updateCheckDone) {
         UpdateChecker.checkForUpdate(scaffoldMessengerKey);

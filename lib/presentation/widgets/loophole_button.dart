@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/colors.dart';
 import '../../core/utils/responsive.dart';
 
-enum LoopHoleState { idle, pasted, downloading, success, error }
+enum LoopHoleState { idle, downloading, success, error }
 
 class LoopHoleButton extends StatefulWidget {
   final LoopHoleState state;
@@ -162,7 +162,6 @@ class _LoopHoleButtonState extends State<LoopHoleButton> with TickerProviderStat
         return _buildDownloadingState(size, ratio);
 
       case LoopHoleState.idle:
-      case LoopHoleState.pasted:
         return _buildRings(size, ratio);
     }
   }
@@ -251,9 +250,7 @@ class _LoopHoleButtonState extends State<LoopHoleButton> with TickerProviderStat
         AnimatedBuilder(
           animation: _pulseController,
           builder: (context, child) {
-            double scale = widget.state == LoopHoleState.pasted 
-                ? 1.0 + (_pulseController.value * 0.4) 
-                : 1.0;
+            double scale = 1.0;
             return Transform.scale(
               scale: scale,
               child: Container(
@@ -315,7 +312,7 @@ class RingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(RingPainter oldDelegate) => false;
+  bool shouldRepaint(RingPainter oldDelegate) => true;
 }
 
 class ProgressArcPainter extends CustomPainter {

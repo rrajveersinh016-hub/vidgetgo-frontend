@@ -24,6 +24,7 @@ class HomeViewModel extends ChangeNotifier {
   int adsWatchedCount = 0;
   DateTime? proExpiryDate;
 
+
   HomeViewModel() {
     loadPremiumState();
   }
@@ -71,8 +72,8 @@ class HomeViewModel extends ChangeNotifier {
         final prefs = await SharedPreferences.getInstance();
         
         if (adsWatchedCount >= 5) {
-          // Grant 3 days of Pro
-          final expiry = DateTime.now().add(const Duration(days: 3));
+          // Grant 2 days of Pro
+          final expiry = DateTime.now().add(const Duration(days: 2));
           proExpiryDate = expiry;
           await prefs.setString('pro_expiry_timestamp', expiry.toIso8601String());
           await prefs.setInt('ads_watched_count', 0);
@@ -83,6 +84,7 @@ class HomeViewModel extends ChangeNotifier {
           await prefs.setInt('ads_watched_count', adsWatchedCount);
           final remaining = 5 - adsWatchedCount;
           if (context.mounted) {
+            ScaffoldMessenger.of(context).clearSnackBars();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Ad completed! Watch $remaining more to unlock Premium.'),
@@ -97,6 +99,7 @@ class HomeViewModel extends ChangeNotifier {
       },
       onClosed: () {
         if (context.mounted) {
+          ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Please finish watching for reward'),
@@ -109,6 +112,7 @@ class HomeViewModel extends ChangeNotifier {
       },
       onError: (errorMsg) {
         if (context.mounted) {
+          ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(errorMsg),
@@ -128,7 +132,7 @@ class HomeViewModel extends ChangeNotifier {
     isPremium = val;
     final prefs = await SharedPreferences.getInstance();
     if (val) {
-      final expiry = DateTime.now().add(const Duration(days: 3));
+      final expiry = DateTime.now().add(const Duration(days: 2));
       proExpiryDate = expiry;
       await prefs.setString('pro_expiry_timestamp', expiry.toIso8601String());
     } else {
@@ -145,9 +149,6 @@ class HomeViewModel extends ChangeNotifier {
   String errorMessage = '';
   bool showPlatformBadge = false;
 
-  Color get currentPlatformColor {
-    return const Color(0xFF9D00FF);
-  }
 
   Future<bool?> _showFormatSelectionSheet(BuildContext context, String title) async {
     return showModalBottomSheet<bool>(
@@ -226,6 +227,17 @@ class HomeViewModel extends ChangeNotifier {
     if (_isProcessing || logoState == LoopHoleState.downloading) return;
     _isProcessing = true;
 
+    // Safety timeout to prevent stuck state
+    Future.delayed(const Duration(seconds: 60), () {
+      if (_isProcessing) {
+        _isProcessing = false;
+        if (logoState == LoopHoleState.downloading) {
+          logoState = LoopHoleState.idle;
+          notifyListeners();
+        }
+      }
+    });
+
     // Reset app startup ad if it was loading/waiting to display
     _adService.cancelAppStartAd();
 
@@ -276,14 +288,15 @@ class HomeViewModel extends ChangeNotifier {
       }
       
       void startDownloadFlow() async {
-        detectedPlatform = platformName(platform);
-        showPlatformBadge = true;
-        HapticFeedback.vibrate();
-        logoState = LoopHoleState.downloading;
-        downloadProgress = 0.0;
-        notifyListeners();
-
+        DownloadItem? currentItem;
         try {
+          detectedPlatform = platformName(platform);
+          showPlatformBadge = true;
+          HapticFeedback.vibrate();
+          logoState = LoopHoleState.downloading;
+          downloadProgress = 0.0;
+          notifyListeners();
+
           // Fetch media info — returns a single Map
           final Map<String, dynamic> info =
               await _downloader.fetchVideoInfo(url).timeout(
@@ -326,7 +339,7 @@ class HomeViewModel extends ChangeNotifier {
               'Media_${DateTime.now().millisecondsSinceEpoch}.$extension';
 
           // Save to DB immediately
-          final item = DownloadItem()
+          currentItem = DownloadItem()
             ..id = DateTime.now().millisecondsSinceEpoch.toString()
             ..url = url
             ..title = info['title'] as String? ?? filename
@@ -339,7 +352,7 @@ class HomeViewModel extends ChangeNotifier {
             ..status = DownloadItem.downloading
             ..fileSize = 0
             ..createdAt = DateTime.now();
-          await _repo.save(item);
+          await _repo.save(currentItem);
 
           // Download with progress
           final filePath = await _downloader.downloadFile(
@@ -357,11 +370,11 @@ class HomeViewModel extends ChangeNotifier {
           // Update DB with completed status
           final File savedFile = File(filePath);
           if (await savedFile.exists()) {
-            item.fileSize = await savedFile.length();
+            currentItem.fileSize = await savedFile.length();
           }
-          item.filePath = filePath;
-          item.status = DownloadItem.completed;
-          await _repo.save(item);
+          currentItem.filePath = filePath;
+          currentItem.status = DownloadItem.completed;
+          await _repo.save(currentItem);
 
           HapticFeedback.vibrate();
           logoState = LoopHoleState.success;
@@ -385,10 +398,9 @@ class HomeViewModel extends ChangeNotifier {
           notifyListeners();
         } catch (e) {
           _setError(e.toString(), onError);
-          await _repo.updateStatus(
-            DateTime.now().millisecondsSinceEpoch.toString(),
-            DownloadItem.failed,
-          );
+          if (currentItem != null) {
+            await _repo.updateStatus(currentItem.id, DownloadItem.failed);
+          }
         } finally {
           _isProcessing = false;
         }
@@ -407,7 +419,7 @@ class HomeViewModel extends ChangeNotifier {
 
   void showAdDuringDownload() {
     Future.delayed(const Duration(seconds: 2), () {
-      if (logoState == LoopHoleState.downloading || logoState == LoopHoleState.success) {
+      if (logoState == LoopHoleState.downloading) {
         _adService.showInterstitialAd();
       }
     });
@@ -420,6 +432,12 @@ class HomeViewModel extends ChangeNotifier {
 
     if (message == 'PHOTOS_NOT_SUPPORTED') {
       userFriendlyMsg = 'Photos & carousels are not supported. Video downloads only.';
+    } else if (msgLower.contains('pinterest link appears to be an image') ||
+               msgLower.contains('pinterest link is an image') ||
+               msgLower.contains('download photos directly in pinterest')) {
+      userFriendlyMsg = "This Pinterest link is an image. You can download photos directly in Pinterest (Tap the 3 dots -> 'Download image').";
+    } else if (msgLower.contains('board or collection')) {
+      userFriendlyMsg = "This link is for a Pinterest Board or Collection. Please copy the link to a single video Pin instead!";
     } else if (msgLower.contains('exception:') || msgLower.contains('dioexception')) {
       if (msgLower.contains('403') ||
           msgLower.contains('401') ||

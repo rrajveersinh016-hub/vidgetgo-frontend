@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import 'ad_service.dart';
 
 class AppOpenAdManager {
@@ -11,7 +13,14 @@ class AppOpenAdManager {
   AppOpenAd? _appOpenAd;
   bool _isLoadingAd = false;
   bool _isShowingAd = false;
+  bool _isColdStart = true;
   DateTime? _lastShowTime;
+  DateTime? _backgroundTime;
+
+  void appWentToBackground() {
+    _backgroundTime = DateTime.now();
+    debugPrint("App Open: App went to background at $_backgroundTime");
+  }
 
   static const String _prodAdUnitId = 'ca-app-pub-1740051595604525/7936570035';
   static const String _testAdUnitId = 'ca-app-pub-3940256099942544/5677595818';
@@ -22,7 +31,7 @@ class AppOpenAdManager {
   bool get _isFrequencyCapSatisfied {
     if (_lastShowTime == null) return true;
     final difference = DateTime.now().difference(_lastShowTime!);
-    return difference.inHours >= 4;
+    return difference.inMinutes >= 5;
   }
 
   /// Loads the persisted show time from SharedPreferences.
@@ -69,11 +78,16 @@ class AppOpenAdManager {
           _appOpenAd = ad;
           _isLoadingAd = false;
           debugPrint("App Open: Loaded successfully.");
+          if (_isColdStart) {
+            _isColdStart = false;
+            showAdIfAvailable();
+          }
         },
         onAdFailedToLoad: (error) {
           _isLoadingAd = false;
           _appOpenAd = null;
           debugPrint("App Open unavailable: ${error.message} (code: ${error.code})");
+          Future.delayed(const Duration(seconds: 30), () => loadAd());
         },
       ),
     );
@@ -106,6 +120,15 @@ class AppOpenAdManager {
     if (!_isFrequencyCapSatisfied) {
       debugPrint("App Open: Skipped - frequency cap not satisfied. Last show time: $_lastShowTime");
       return;
+    }
+
+    if (_backgroundTime != null) {
+      final elapsed = DateTime.now().difference(_backgroundTime!);
+      _backgroundTime = null;
+      if (elapsed.inSeconds < 30) {
+        debugPrint("App Open: Skipped - app in background for less than 30s (${elapsed.inSeconds}s).");
+        return;
+      }
     }
 
     if (_appOpenAd == null) {
@@ -141,6 +164,12 @@ class AppOpenAdManager {
     );
 
     debugPrint("Unity bidding request sent");
-    _appOpenAd!.show();
+    try {
+      _appOpenAd!.show();
+    } on PlatformException catch (e) {
+      debugPrint('App Open ad failed to show (PlatformException): $e');
+    } catch (e) {
+      debugPrint('App Open ad show error: $e');
+    }
   }
 }

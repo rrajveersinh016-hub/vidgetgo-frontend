@@ -47,6 +47,17 @@ class UpdateChecker {
   static String _getVersionNameFromCode(int? code) {
     if (code == null) return "Unknown (null)";
     switch (code) {
+      case 20: return "1.0.9";
+      case 19: return "1.0.8";
+      case 18: return "1.0.8";
+      case 17: return "1.0.7";
+      case 16: return "1.0.7";
+      case 15: return "1.0.7";
+      case 14: return "1.0.6";
+      case 13: return "1.0.6";
+      case 12: return "1.0.6";
+      case 11: return "1.0.5";
+      case 10: return "1.0.5";
       case 9: return "1.0.4";
       case 8: return "1.0.4";
       case 7: return "1.0.3";

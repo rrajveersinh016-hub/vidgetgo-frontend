@@ -87,7 +87,11 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   Future<void> _deleteItem(DownloadItem item) async {
     // If the currently playing audio is deleted, stop player and clear it
     if (_currentPlayingNotifier.value?.id == item.id) {
-      await _audioPlayer.stop();
+      try {
+        await _audioPlayer.stop();
+      } catch (e) {
+        _handleAudioError(e);
+      }
       _currentPlayingNotifier.value = null;
     }
     await _repo.delete(item.id);
@@ -210,12 +214,39 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     return lower.endsWith('.mp4');
   }
 
+  void _handleAudioError(Object error) {
+    debugPrint('AudioPlayer error: $error');
+    if (error is PlatformException && error.code == 'AndroidAudioError') {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(
+            content: Text('Audio playback is not supported on this device'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          SnackBar(
+            content: Text('Error playing audio: $error'),
+            backgroundColor: Colors.red[800],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _playAudio(DownloadItem item) async {
     try {
       final file = File(item.filePath);
       if (!await file.exists()) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
             const SnackBar(
               content: Text('Audio file does not exist!'),
               backgroundColor: Colors.orange,
@@ -232,25 +263,21 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
       
       await _audioPlayer.play(DeviceFileSource(item.filePath));
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error playing audio: $e'),
-            backgroundColor: Colors.red[800],
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      _handleAudioError(e);
     }
   }
 
   Future<void> _togglePlayPause() async {
-    if (_playerState == PlayerState.playing) {
-      await _audioPlayer.pause();
-    } else if (_playerState == PlayerState.paused) {
-      await _audioPlayer.resume();
-    } else if (_currentPlayingNotifier.value != null) {
-      await _playAudio(_currentPlayingNotifier.value!);
+    try {
+      if (_playerState == PlayerState.playing) {
+        await _audioPlayer.pause();
+      } else if (_playerState == PlayerState.paused) {
+        await _audioPlayer.resume();
+      } else if (_currentPlayingNotifier.value != null) {
+        await _playAudio(_currentPlayingNotifier.value!);
+      }
+    } catch (e) {
+      _handleAudioError(e);
     }
   }
 
@@ -498,8 +525,12 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                         child: Slider(
                           value: value,
                           onChanged: (val) async {
-                            final targetMs = (val * duration.inMilliseconds).toInt();
-                            await _audioPlayer.seek(Duration(milliseconds: targetMs));
+                            try {
+                              final targetMs = (val * duration.inMilliseconds).toInt();
+                              await _audioPlayer.seek(Duration(milliseconds: targetMs));
+                            } catch (e) {
+                              _handleAudioError(e);
+                            }
                           },
                         ),
                       ),
@@ -771,7 +802,11 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               icon: const Icon(Icons.delete_sweep, color: Colors.grey),
               onPressed: () async {
                 await _repo.clearAll();
-                await _audioPlayer.stop();
+                try {
+                  await _audioPlayer.stop();
+                } catch (e) {
+                  _handleAudioError(e);
+                }
                 _currentPlayingNotifier.value = null;
                 _loadDownloads();
               },

@@ -84,9 +84,15 @@ class MainActivity : FlutterFragmentActivity() {
                 "syncStatuses" -> {
                     val type = call.argument<String>("type") ?: "whatsapp"
                     Thread {
-                        val success = syncStatuses(type)
-                        runOnUiThread {
-                            result.success(success)
+                        try {
+                            val success = syncStatuses(type)
+                            runOnUiThread {
+                                result.success(success)
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                result.error("SYNC_ERROR", e.message, null)
+                            }
                         }
                     }.start()
                 }
@@ -159,16 +165,22 @@ class MainActivity : FlutterFragmentActivity() {
                     val audioPath = call.argument<String>("audioPath")
                     val outputPath = call.argument<String>("outputPath")
                     if (videoPath != null && audioPath != null && outputPath != null) {
-                        try {
-                            val success = mergeMedia(videoPath, audioPath, outputPath)
-                            if (success) {
-                                result.success(true)
-                            } else {
-                                result.error("MERGE_FAILED", "Muxer failed", null)
+                        Thread {
+                            try {
+                                val success = mergeMedia(videoPath, audioPath, outputPath)
+                                runOnUiThread {
+                                    if (success) {
+                                        result.success(true)
+                                    } else {
+                                        result.error("MERGE_FAILED", "Muxer failed", null)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    result.error("MERGE_EXCEPTION", e.message, null)
+                                }
                             }
-                        } catch (e: Exception) {
-                            result.error("MERGE_EXCEPTION", e.message, null)
-                        }
+                        }.start()
                     } else {
                         result.error("INVALID_ARGS", "Missing arguments", null)
                     }
@@ -179,30 +191,33 @@ class MainActivity : FlutterFragmentActivity() {
                         Thread {
                             try {
                                 val retriever = android.media.MediaMetadataRetriever()
-                                retriever.setDataSource(path)
-                                val bitmap = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                                if (bitmap != null) {
-                                    val stream = java.io.ByteArrayOutputStream()
-                                    // Scale down for faster grid rendering
-                                    val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
-                                        bitmap, 
-                                        300, 
-                                        (300.toFloat() / bitmap.width * bitmap.height).toInt(), 
-                                        true
-                                    )
-                                    scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
-                                    val byteArray = stream.toByteArray()
-                                    runOnUiThread {
-                                        result.success(byteArray)
+                                try {
+                                    retriever.setDataSource(path)
+                                    val bitmap = retriever.getFrameAtTime(0, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                    if (bitmap != null) {
+                                        val stream = java.io.ByteArrayOutputStream()
+                                        // Scale down for faster grid rendering
+                                        val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(
+                                            bitmap, 
+                                            300, 
+                                            (300.toFloat() / bitmap.width * bitmap.height).toInt(), 
+                                            true
+                                        )
+                                        scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, stream)
+                                        val byteArray = stream.toByteArray()
+                                        runOnUiThread {
+                                            result.success(byteArray)
+                                        }
+                                        bitmap.recycle()
+                                        scaledBitmap.recycle()
+                                    } else {
+                                        runOnUiThread {
+                                            result.error("NO_FRAME", "Could not extract frame", null)
+                                        }
                                     }
-                                    bitmap.recycle()
-                                    scaledBitmap.recycle()
-                                } else {
-                                    runOnUiThread {
-                                        result.error("NO_FRAME", "Could not extract frame", null)
-                                    }
+                                } finally {
+                                    retriever.release()
                                 }
-                                retriever.release()
                             } catch (e: Exception) {
                                 runOnUiThread {
                                     result.error("THUMBNAIL_FAILED", e.message, null)
@@ -281,34 +296,48 @@ class MainActivity : FlutterFragmentActivity() {
             
             muxer.start()
             
-            // Copy Video Track
-            val videoBuffer = java.nio.ByteBuffer.allocate(1024 * 1024)
-            val videoBufferInfo = android.media.MediaCodec.BufferInfo()
-            while (true) {
-                videoBufferInfo.offset = 0
-                videoBufferInfo.size = videoExtractor.readSampleData(videoBuffer, 0)
-                if (videoBufferInfo.size < 0) {
-                    break
-                }
-                videoBufferInfo.presentationTimeUs = videoExtractor.sampleTime
-                videoBufferInfo.flags = videoExtractor.sampleFlags
-                muxer.writeSampleData(muxerVideoTrackIndex, videoBuffer, videoBufferInfo)
-                videoExtractor.advance()
-            }
+            // Interleave Video and Audio Tracks by timestamp
+            val buffer = java.nio.ByteBuffer.allocate(1024 * 1024)
+            val bufferInfo = android.media.MediaCodec.BufferInfo()
             
-            // Copy Audio Track
-            val audioBuffer = java.nio.ByteBuffer.allocate(1024 * 1024)
-            val audioBufferInfo = android.media.MediaCodec.BufferInfo()
-            while (true) {
-                audioBufferInfo.offset = 0
-                audioBufferInfo.size = audioExtractor.readSampleData(audioBuffer, 0)
-                if (audioBufferInfo.size < 0) {
-                    break
+            var videoDone = false
+            var audioDone = false
+            
+            while (!videoDone || !audioDone) {
+                var selectVideo = false
+                if (!videoDone && !audioDone) {
+                    val videoTime = videoExtractor.sampleTime
+                    val audioTime = audioExtractor.sampleTime
+                    if (videoTime <= audioTime) {
+                        selectVideo = true
+                    }
+                } else if (!videoDone) {
+                    selectVideo = true
                 }
-                audioBufferInfo.presentationTimeUs = audioExtractor.sampleTime
-                audioBufferInfo.flags = audioExtractor.sampleFlags
-                muxer.writeSampleData(muxerAudioTrackIndex, audioBuffer, audioBufferInfo)
-                audioExtractor.advance()
+                
+                if (selectVideo) {
+                    bufferInfo.offset = 0
+                    bufferInfo.size = videoExtractor.readSampleData(buffer, 0)
+                    if (bufferInfo.size < 0) {
+                        videoDone = true
+                    } else {
+                        bufferInfo.presentationTimeUs = videoExtractor.sampleTime
+                        bufferInfo.flags = videoExtractor.sampleFlags
+                        muxer.writeSampleData(muxerVideoTrackIndex, buffer, bufferInfo)
+                        videoExtractor.advance()
+                    }
+                } else {
+                    bufferInfo.offset = 0
+                    bufferInfo.size = audioExtractor.readSampleData(buffer, 0)
+                    if (bufferInfo.size < 0) {
+                        audioDone = true
+                    } else {
+                        bufferInfo.presentationTimeUs = audioExtractor.sampleTime
+                        bufferInfo.flags = audioExtractor.sampleFlags
+                        muxer.writeSampleData(muxerAudioTrackIndex, buffer, bufferInfo)
+                        audioExtractor.advance()
+                    }
+                }
             }
             
             muxer.stop()
@@ -578,86 +607,98 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun saveMediaToGallery(srcPath: String, name: String, result: MethodChannel.Result) {
-        val srcFile = File(srcPath)
-        if (!srcFile.exists()) {
-            result.error("FILE_NOT_FOUND", "Source file does not exist", null)
-            return
-        }
+        Thread {
+            try {
+                val srcFile = File(srcPath)
+                if (!srcFile.exists()) {
+                    runOnUiThread {
+                        result.error("FILE_NOT_FOUND", "Source file does not exist", null)
+                    }
+                    return@Thread
+                }
 
-        val isPhoto = name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) || name.endsWith(".png", true)
-        val isVideo = name.endsWith(".mp4", true) || name.endsWith(".mkv", true)
-        if (!isPhoto && !isVideo) {
-            result.error("INVALID_FILE_TYPE", "File is neither photo nor video", null)
-            return
-        }
+                val isPhoto = name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) || name.endsWith(".png", true)
+                val isVideo = name.endsWith(".mp4", true) || name.endsWith(".mkv", true)
+                if (!isPhoto && !isVideo) {
+                    runOnUiThread {
+                        result.error("INVALID_FILE_TYPE", "File is neither photo nor video", null)
+                    }
+                    return@Thread
+                }
 
-        val relativePath = if (isPhoto) "Pictures/LoopHole" else "DCIM/LoopHole"
-        val mimeType = when {
-            name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) -> "image/jpeg"
-            name.endsWith(".png", true) -> "image/png"
-            name.endsWith(".mp4", true) -> "video/mp4"
-            name.endsWith(".mkv", true) -> "video/x-matroska"
-            else -> if (isPhoto) "image/*" else "video/*"
-        }
+                val relativePath = if (isPhoto) "Pictures/LoopHole" else "DCIM/LoopHole"
+                val mimeType = when {
+                    name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) -> "image/jpeg"
+                    name.endsWith(".png", true) -> "image/png"
+                    name.endsWith(".mp4", true) -> "video/mp4"
+                    name.endsWith(".mkv", true) -> "video/x-matroska"
+                    else -> if (isPhoto) "image/*" else "video/*"
+                }
 
-        try {
-            val resolver = contentResolver
-            var uri: Uri? = null
-            
-            if (android.os.Build.VERSION.SDK_INT >= 29) {
-                val contentUri = if (isPhoto) {
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                val resolver = contentResolver
+                var uri: Uri? = null
+                
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    val contentUri = if (isPhoto) {
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                    } else {
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    }
+
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                        put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+
+                    uri = resolver.insert(contentUri, values)
+                    if (uri != null) {
+                        resolver.openOutputStream(uri)?.use { outputStream ->
+                            srcFile.inputStream().use { inputStream ->
+                                inputStream.copyTo(outputStream)
+                            }
+                        }
+                        values.clear()
+                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        resolver.update(uri, values, null, null)
+                    }
                 } else {
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                }
-
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-                    put(MediaStore.MediaColumns.IS_PENDING, 1)
-                }
-
-                uri = resolver.insert(contentUri, values)
-                if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { outputStream ->
-                        srcFile.inputStream().use { inputStream ->
+                    val galleryDirName = if (isPhoto) "Pictures" else "DCIM"
+                    val targetDir = File(android.os.Environment.getExternalStorageDirectory(), "$galleryDirName/LoopHole")
+                    if (!targetDir.exists()) {
+                        targetDir.mkdirs()
+                    }
+                    val targetFile = File(targetDir, name)
+                    srcFile.inputStream().use { inputStream ->
+                        FileOutputStream(targetFile).use { outputStream ->
                             inputStream.copyTo(outputStream)
                         }
                     }
-                    values.clear()
-                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
+                    MediaScannerConnection.scanFile(this, arrayOf(targetFile.absolutePath), arrayOf(mimeType), null)
+                    uri = Uri.fromFile(targetFile)
                 }
-            } else {
-                val galleryDirName = if (isPhoto) "Pictures" else "DCIM"
-                val targetDir = File(android.os.Environment.getExternalStorageDirectory(), "$galleryDirName/LoopHole")
-                if (!targetDir.exists()) {
-                    targetDir.mkdirs()
-                }
-                val targetFile = File(targetDir, name)
-                srcFile.inputStream().use { inputStream ->
-                    FileOutputStream(targetFile).use { outputStream ->
-                        inputStream.copyTo(outputStream)
+
+                if (uri != null) {
+                    val finalPath = if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        "/storage/emulated/0/$relativePath/$name"
+                    } else {
+                        val galleryDirName = if (isPhoto) "Pictures" else "DCIM"
+                        File(android.os.Environment.getExternalStorageDirectory(), "$galleryDirName/LoopHole/$name").absolutePath
+                    }
+                    runOnUiThread {
+                        result.success(finalPath)
+                    }
+                } else {
+                    runOnUiThread {
+                        result.error("SAVE_FAILED", "Failed to insert into MediaStore", null)
                     }
                 }
-                MediaScannerConnection.scanFile(this, arrayOf(targetFile.absolutePath), arrayOf(mimeType), null)
-                uri = Uri.fromFile(targetFile)
-            }
-
-            if (uri != null) {
-                val finalPath = if (android.os.Build.VERSION.SDK_INT >= 29) {
-                    "/storage/emulated/0/$relativePath/$name"
-                } else {
-                    val galleryDirName = if (isPhoto) "Pictures" else "DCIM"
-                    File(android.os.Environment.getExternalStorageDirectory(), "$galleryDirName/LoopHole/$name").absolutePath
+            } catch (e: Exception) {
+                runOnUiThread {
+                    result.error("SAVE_EXCEPTION", e.message, null)
                 }
-                result.success(finalPath)
-            } else {
-                result.error("SAVE_FAILED", "Failed to insert into MediaStore", null)
             }
-        } catch (e: Exception) {
-            result.error("SAVE_EXCEPTION", e.message, null)
-        }
+        }.start()
     }
 }

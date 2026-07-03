@@ -78,8 +78,6 @@ class DownloaderService {
   // ─────────────────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> fetchVideoInfo(String url) async {
     try {
-      // Live backend URL — can be changed remotely from Firebase Console
-      final String backendUrl = RemoteConfigService().backendUrl;
       final bool isYouTube =
           url.contains('youtube.com') || url.contains('youtu.be');
       final bool isPinterest =
@@ -91,34 +89,65 @@ class DownloaderService {
 
       if (isPinterest) {
         try {
-          // debugPrint('Attempting client-side Pinterest extraction...');
           return await _fetchPinterestClientSide(url);
         } catch (e) {
-          // debugPrint('Client-side Pinterest failed, falling back to backend: $e');
+          // Fallback to backend
         }
       }
 
-      // Standard routing for other platforms (Instagram, Facebook, Pinterest)
-      final response = await _dio.get(
-        '$backendUrl/extract',
-        queryParameters: {'url': url},
-        options: Options(
-          sendTimeout: const Duration(seconds: 60),
-          receiveTimeout: const Duration(seconds: 60),
-          headers: {
-            'x-api-key': 'LOOPHOLE_SECURE_V1_TOKEN',
-          },
-          validateStatus: (status) => true,
-        ),
-      );
+      final String primaryUrl = RemoteConfigService().backendUrl;
+      final String backupUrl = RemoteConfigService().backupUrl;
 
-      if (response.statusCode == 200 && response.data != null) {
-        return _parseBackendResponse(response.data as Map<String, dynamic>);
+      // 1. Try Primary Server
+      try {
+        final response = await _dio.get(
+          '$primaryUrl/extract',
+          queryParameters: {'url': url},
+          options: Options(
+            sendTimeout: const Duration(seconds: 12),
+            receiveTimeout: const Duration(seconds: 12),
+            headers: {
+              'x-api-key': 'LOOPHOLE_SECURE_V1_TOKEN',
+            },
+          ),
+        );
+
+        if (response.statusCode == 200 && response.data != null) {
+          return _parseBackendResponse(response.data as Map<String, dynamic>);
+        }
+        throw Exception('Primary failed with status: ${response.statusCode}');
+      } catch (primaryError) {
+        // 2. Failover: Try Backup Server
+        try {
+          final response = await _dio.get(
+            '$backupUrl/extract',
+            queryParameters: {'url': url},
+            options: Options(
+              sendTimeout: const Duration(seconds: 25),
+              receiveTimeout: const Duration(seconds: 25),
+              headers: {
+                'x-api-key': 'LOOPHOLE_SECURE_V1_TOKEN',
+              },
+            ),
+          );
+
+          if (response.statusCode == 200 && response.data != null) {
+            return _parseBackendResponse(response.data as Map<String, dynamic>);
+          }
+
+          final errorData = response.data;
+          throw Exception(
+              errorData is Map ? (errorData['detail'] ?? 'Backend error') : 'Backup failed with status: ${response.statusCode}');
+        } on DioException catch (e) {
+          if (e.type == DioExceptionType.connectionTimeout ||
+              e.type == DioExceptionType.receiveTimeout) {
+            throw Exception('Connection timed out. Please check your internet and try again.');
+          }
+          throw Exception(e.response?.data is Map 
+              ? (e.response?.data['detail'] ?? 'Network error')
+              : 'Network error: ${e.message}');
+        }
       }
-
-      final errorData = response.data;
-      throw Exception(
-          errorData?['detail'] ?? 'Backend error: ${response.statusCode}');
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.receiveTimeout) {
@@ -343,8 +372,8 @@ class DownloaderService {
     bool audioOnly = false,
     bool isPhoto = false,
   }) async {
-    // Save to Downloads/LoopHole folder
-    final dir = Directory('/storage/emulated/0/Download/LoopHole');
+    final externalDir = await getExternalStorageDirectory();
+    final dir = Directory('${externalDir?.path ?? '/storage/emulated/0'}/Download/LoopHole');
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
@@ -362,7 +391,7 @@ class DownloaderService {
     if (audioOnly) {
       extension = 'm4a';
     } else if (isPhoto) {
-      extension = 'jpg';
+      extension = _getExtensionFromUrl(downloadUrl);
     } else {
       extension = 'mp4';
     }
@@ -543,47 +572,50 @@ class DownloaderService {
     bool isRegularYTVideo = false,
   }) async {
     final httpClient = HttpClient();
-    final request = await httpClient.getUrl(Uri.parse(url));
+    try {
+      final request = await httpClient.getUrl(Uri.parse(url));
 
-    if (platform.toLowerCase() == 'pinterest') {
-      request.headers.set('User-Agent',
-          'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
-      request.headers.set('Accept-Encoding', 'gzip, deflate, br');
-      request.headers.set('Connection', 'keep-alive');
-    } else {
-      request.headers.set('User-Agent',
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    }
-
-    request.headers.set('Accept', '*/*');
-
-    if (!isRegularYTVideo) {
-      request.headers.set('Referer', _getReferer(platform));
-    }
-
-    final response = await request.close();
-    if (response.statusCode != 200) {
-      throw Exception(
-          'Stream download failed: HTTP ${response.statusCode}');
-    }
-
-    final totalBytes = response.contentLength;
-    int receivedBytes = 0;
-
-    final file = File(savePath);
-    final sink = file.openWrite();
-
-    await for (final chunk in response) {
-      sink.add(chunk);
-      receivedBytes += chunk.length;
-      if (totalBytes > 0) {
-        onProgress(receivedBytes / totalBytes);
+      if (platform.toLowerCase() == 'pinterest') {
+        request.headers.set('User-Agent',
+            'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36');
+        request.headers.set('Accept-Encoding', 'gzip, deflate, br');
+        request.headers.set('Connection', 'keep-alive');
+      } else {
+        request.headers.set('User-Agent',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
       }
-    }
 
-    await sink.flush();
-    await sink.close();
-    httpClient.close();
+      request.headers.set('Accept', '*/*');
+
+      if (!isRegularYTVideo) {
+        request.headers.set('Referer', _getReferer(platform));
+      }
+
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        throw Exception(
+            'Stream download failed: HTTP ${response.statusCode}');
+      }
+
+      final totalBytes = response.contentLength;
+      int receivedBytes = 0;
+
+      final file = File(savePath);
+      final sink = file.openWrite();
+
+      await for (final chunk in response) {
+        sink.add(chunk);
+        receivedBytes += chunk.length;
+        if (totalBytes > 0) {
+          onProgress(receivedBytes / totalBytes);
+        }
+      }
+
+      await sink.flush();
+      await sink.close();
+    } finally {
+      httpClient.close();
+    }
   }
 
   Future<void> _mergeVideoAndAudio(
@@ -609,5 +641,14 @@ class DownloaderService {
         // debugPrint('Temp file cleanup error: $e');
       }
     }
+  }
+
+  String _getExtensionFromUrl(String url) {
+    final uri = Uri.parse(url.split('?').first);
+    final path = uri.path.toLowerCase();
+    if (path.endsWith('.png')) return 'png';
+    if (path.endsWith('.webp')) return 'webp';
+    if (path.endsWith('.gif')) return 'gif';
+    return 'jpg'; // default fallback
   }
 }

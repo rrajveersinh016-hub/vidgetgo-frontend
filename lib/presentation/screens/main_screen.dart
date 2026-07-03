@@ -16,6 +16,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  bool _statusSaverAdShownThisSession = false;
 
   final List<Widget> _pages = [
     const HomeScreen(),
@@ -63,6 +64,10 @@ class _MainScreenState extends State<MainScreen> {
           setState(() {
             _currentIndex = index;
           });
+          if (index == 1 && !_statusSaverAdShownThisSession) {
+            _statusSaverAdShownThisSession = true;
+            AdService().showInterstitialAd();
+          }
         },
         backgroundColor: Colors.black,
         selectedItemColor: AppColors.neonPurple,
