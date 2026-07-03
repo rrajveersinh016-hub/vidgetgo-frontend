@@ -107,7 +107,7 @@ class DownloaderService {
             sendTimeout: const Duration(seconds: 12),
             receiveTimeout: const Duration(seconds: 12),
             headers: {
-              'x-api-key': 'LOOPHOLE_SECURE_V1_TOKEN',
+              'x-api-key': RemoteConfigService().apiKey,
             },
           ),
         );
@@ -126,7 +126,7 @@ class DownloaderService {
               sendTimeout: const Duration(seconds: 25),
               receiveTimeout: const Duration(seconds: 25),
               headers: {
-                'x-api-key': 'LOOPHOLE_SECURE_V1_TOKEN',
+                'x-api-key': RemoteConfigService().apiKey,
               },
             ),
           );
@@ -355,8 +355,6 @@ class DownloaderService {
         return 'https://www.instagram.com/';
       case 'facebook':
         return 'https://www.facebook.com/';
-      case 'youtube':
-        return 'https://www.youtube.com/';
       case 'pinterest':
         return 'https://www.pinterest.com/';
       default:

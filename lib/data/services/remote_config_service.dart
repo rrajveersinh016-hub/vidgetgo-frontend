@@ -32,6 +32,7 @@ class RemoteConfigService {
     'force_update_message':
         'A new version is required to continue. Please update LoopHole from the Play Store.',
     'backup_url': 'https://vidgetgo-backend-3fj0.onrender.com',
+    'api_key': 'LOOPHOLE_SECURE_V1_TOKEN',
   };
 
   Future<void> initialize() async {
@@ -107,4 +108,9 @@ class RemoteConfigService {
   String get backupUrl =>
       _remoteConfig?.getString('backup_url') ??
       _defaults['backup_url'] as String;
+
+  /// Secure API key for backend authentication.
+  String get apiKey =>
+      _remoteConfig?.getString('api_key') ??
+      _defaults['api_key'] as String;
 }
