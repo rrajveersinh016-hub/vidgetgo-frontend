@@ -10,6 +10,7 @@ import 'data/models/download_item.dart';
 import 'data/services/app_open_ad_manager.dart';
 import 'data/services/update_checker.dart';
 import 'data/services/remote_config_service.dart';
+import 'data/services/ad_service.dart';
 
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -44,7 +45,17 @@ void main() async {
 
 Future<void> _initNonCriticalServices() async {
   try {
-    // Initialize Firebase safely — app will not crash even if this fails
+    // 1. Start Mobile Ads SDK initialization in parallel immediately
+    MobileAds.instance.initialize().then((_) {
+      debugPrint("Mobile Ads SDK initialized successfully.");
+      AdService().isSdkInitialized.value = true;
+      AppOpenAdManager().init();
+      // Preload ads immediately now that SDK is ready
+      AdService().loadInterstitialAd();
+      AdService().loadRewardedAd();
+    });
+
+    // 2. Initialize Firebase and Remote Config safely
     try {
       await Firebase.initializeApp();
 
@@ -72,11 +83,6 @@ Future<void> _initNonCriticalServices() async {
     } catch (e) {
       debugPrint('Firebase initialization failed (non-fatal): $e');
     }
-
-    // Initialize Mobile Ads SDK and App Open Ad Manager in the background
-    MobileAds.instance.initialize().then((_) {
-      AppOpenAdManager().init();
-    });
   } catch (e) {
     debugPrint('Non-critical service init failed: $e');
     // never crash for non-critical services

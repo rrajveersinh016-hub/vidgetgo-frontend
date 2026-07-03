@@ -11,6 +11,7 @@ class AdService {
 
   bool isPremium = false;
   bool isFullScreenAdShowing = false;
+  final ValueNotifier<bool> isSdkInitialized = ValueNotifier<bool>(false);
   
   InterstitialAd? _interstitialAd;
   bool _isInterstitialAdLoading = false;
@@ -61,6 +62,7 @@ class AdService {
 
   /// Pre-loads the interstitial ad so it is ready to display immediately.
   void loadInterstitialAd() {
+    if (!isSdkInitialized.value) return;
     if (isPremium || _isInterstitialAdLoading || _interstitialAd != null) return;
     _isInterstitialAdLoading = true;
     debugPrint("Interstitial: Start loading...");
@@ -196,6 +198,7 @@ class AdService {
 
   /// Pre-loads the rewarded ad.
   void loadRewardedAd() {
+    if (!isSdkInitialized.value) return;
     if (isPremium || _isRewardedAdLoading || _rewardedAd != null) return;
     _isRewardedAdLoading = true;
     debugPrint("Rewarded: Start loading...");
@@ -319,9 +322,21 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
   Timer? _retryTimer;
 
   @override
+  void initState() {
+    super.initState();
+    AdService().isSdkInitialized.addListener(_onSdkInitializedChanged);
+  }
+
+  void _onSdkInitializedChanged() {
+    if (AdService().isSdkInitialized.value && !_isLoaded && !_isLoadingAd) {
+      _loadAd();
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isLoaded && !_isLoadingAd) {
+    if (AdService().isSdkInitialized.value && !_isLoaded && !_isLoadingAd) {
       _loadAd();
     }
   }
@@ -384,6 +399,7 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
 
   @override
   void dispose() {
+    AdService().isSdkInitialized.removeListener(_onSdkInitializedChanged);
     _retryTimer?.cancel();
     _bannerAd?.dispose();
     super.dispose();
