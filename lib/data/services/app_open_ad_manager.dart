@@ -18,6 +18,11 @@ class AppOpenAdManager {
   DateTime? _backgroundTime;
   final DateTime _appLaunchTime = DateTime.now();
 
+  bool isSplashActive = false;
+  VoidCallback? onSplashAdDismissed;
+
+  bool get isAdAvailable => _appOpenAd != null;
+
   void appWentToBackground() {
     _backgroundTime = DateTime.now();
     debugPrint("App Open: App went to background at $_backgroundTime");
@@ -79,7 +84,9 @@ class AppOpenAdManager {
           _appOpenAd = ad;
           _isLoadingAd = false;
           debugPrint("App Open: Loaded successfully.");
-          if (_isColdStart) {
+          if (isSplashActive) {
+            showAdIfAvailable();
+          } else if (_isColdStart) {
             _isColdStart = false;
             final elapsed = DateTime.now().difference(_appLaunchTime);
             if (elapsed.inSeconds <= 3) {
@@ -105,6 +112,10 @@ class AppOpenAdManager {
 
     if (AdService().isPremium) {
       debugPrint("App Open: Skipped - user is premium.");
+      if (isSplashActive) {
+        isSplashActive = false;
+        if (onSplashAdDismissed != null) onSplashAdDismissed!();
+      }
       return;
     }
 
@@ -115,16 +126,28 @@ class AppOpenAdManager {
 
     if (AdService().isFullScreenAdShowing) {
       debugPrint("App Open: Skipped - another fullscreen ad is showing (Priority: Interstitial/Rewarded > App Open).");
+      if (isSplashActive) {
+        isSplashActive = false;
+        if (onSplashAdDismissed != null) onSplashAdDismissed!();
+      }
       return;
     }
 
     if (!AdService().isCooldownSatisfied) {
       debugPrint("App Open: Skipped - ad cooldown active.");
+      if (isSplashActive) {
+        isSplashActive = false;
+        if (onSplashAdDismissed != null) onSplashAdDismissed!();
+      }
       return;
     }
 
     if (!_isFrequencyCapSatisfied) {
       debugPrint("App Open: Skipped - frequency cap not satisfied. Last show time: $_lastShowTime");
+      if (isSplashActive) {
+        isSplashActive = false;
+        if (onSplashAdDismissed != null) onSplashAdDismissed!();
+      }
       return;
     }
 
@@ -133,6 +156,10 @@ class AppOpenAdManager {
       _backgroundTime = null;
       if (elapsed.inSeconds < 30) {
         debugPrint("App Open: Skipped - app in background for less than 30s (${elapsed.inSeconds}s).");
+        if (isSplashActive) {
+          isSplashActive = false;
+          if (onSplashAdDismissed != null) onSplashAdDismissed!();
+        }
         return;
       }
     }
@@ -140,6 +167,10 @@ class AppOpenAdManager {
     if (_appOpenAd == null) {
       debugPrint("App Open: Ad not ready. Triggering reload...");
       loadAd();
+      if (isSplashActive) {
+        isSplashActive = false;
+        if (onSplashAdDismissed != null) onSplashAdDismissed!();
+      }
       return;
     }
 
@@ -158,6 +189,10 @@ class AppOpenAdManager {
         AdService().setLastFullScreenCloseTime(DateTime.now());
         _saveLastShowTime(DateTime.now());
         loadAd(); // Preload the next ad
+        if (isSplashActive) {
+          isSplashActive = false;
+          if (onSplashAdDismissed != null) onSplashAdDismissed!();
+        }
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         debugPrint("App Open: Failed to show: ${error.message}");
@@ -166,6 +201,10 @@ class AppOpenAdManager {
         _isShowingAd = false;
         AdService().isFullScreenAdShowing = false;
         loadAd();
+        if (isSplashActive) {
+          isSplashActive = false;
+          if (onSplashAdDismissed != null) onSplashAdDismissed!();
+        }
       },
     );
 
@@ -174,8 +213,16 @@ class AppOpenAdManager {
       _appOpenAd!.show();
     } on PlatformException catch (e) {
       debugPrint('App Open ad failed to show (PlatformException): $e');
+      if (isSplashActive) {
+        isSplashActive = false;
+        if (onSplashAdDismissed != null) onSplashAdDismissed!();
+      }
     } catch (e) {
       debugPrint('App Open ad show error: $e');
+      if (isSplashActive) {
+        isSplashActive = false;
+        if (onSplashAdDismissed != null) onSplashAdDismissed!();
+      }
     }
   }
 }

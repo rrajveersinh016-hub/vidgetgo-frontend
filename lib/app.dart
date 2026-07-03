@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
-import 'presentation/screens/main_screen.dart';
+
 import 'presentation/viewmodels/home_viewmodel.dart';
+import 'presentation/screens/splash_screen.dart';
 import 'main.dart';
 
 class LoopHoleApp extends StatelessWidget {
@@ -20,7 +21,7 @@ class LoopHoleApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
         scaffoldMessengerKey: scaffoldMessengerKey,
-        home: const MainScreen(),
+        home: const SplashScreen(),
       ),
     );
   }
