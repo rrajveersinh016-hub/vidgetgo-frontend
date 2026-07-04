@@ -75,4 +75,10 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation("androidx.activity:activity:1.9.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
+
+    // AdMob Mediation Adapters
+    // Unity Ads adapter - verified compatible with GMA SDK 25.3.0
+    implementation("com.google.ads.mediation:unity:4.18.1.0")
+    // Meta Audience Network adapter - verified compatible with GMA SDK 25.2.0/25.3.0
+    implementation("com.google.ads.mediation:facebook:6.21.0.3")
 }

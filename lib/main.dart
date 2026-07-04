@@ -28,7 +28,19 @@ void main() async {
 
   // Initialize Mobile Ads SDK immediately (running in parallel)
   try {
-    MobileAds.instance.initialize();
+    MobileAds.instance.initialize().then((InitializationStatus status) {
+      // Log initialization status of each mediation adapter (Unity, Meta, etc.)
+      // This is safe: if a single adapter fails, GMA continues with the others.
+      status.adapterStatuses.forEach((adapterName, adapterStatus) {
+        debugPrint(
+          'Adapter [$adapterName]: '
+          'state=${adapterStatus.state.name}, '
+          'description=${adapterStatus.description}',
+        );
+      });
+    }).catchError((e) {
+      debugPrint("Mobile Ads adapter initialization error: $e");
+    });
   } catch (e) {
     debugPrint("Mobile Ads initialization failed: $e");
   }

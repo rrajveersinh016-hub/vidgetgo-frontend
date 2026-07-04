@@ -36,3 +36,15 @@
 -keep class com.loophole.app.data.models.DownloadItem { *; }
 -keep class com.loophole.app.data.models.DownloadItemAdapter { *; }
 -dontwarn hive.**
+
+# Unity Ads Mediation Adapter
+-keep class com.unity3d.ads.** { *; }
+-keep class com.unity3d.services.** { *; }
+-dontwarn com.unity3d.ads.**
+-dontwarn com.unity3d.services.**
+
+# Meta (Facebook) Audience Network Mediation Adapter
+-keep class com.facebook.** { *; }
+-keep class com.facebook.ads.** { *; }
+-dontwarn com.facebook.**
+-dontwarn com.facebook.ads.**
