@@ -567,29 +567,21 @@ class DownloaderService {
                 'File too small: $fileSize bytes - download failed');
           }
 
-          // Save to system gallery (DCIM/LoopHole) so gallery apps can see it.
-          // Files in /Android/data/ are invisible to gallery on Android 10+.
+          // Save to system gallery (DCIM for video/photo, Music for audio).
+          // Files in /Android/data/ are invisible to gallery/music apps on Android 10+.
           String galleryPath = filePath;
-          if (!audioOnly) {
-            try {
-              const channel = MethodChannel('com.loophole.app/media');
-              final result = await channel.invokeMethod<String>(
-                'saveMediaToGallery',
-                {'srcPath': filePath, 'name': filename},
-              );
-              if (result != null && result.isNotEmpty) {
-                galleryPath = result;
-              }
-            } catch (e) {
-              // Gallery save failed — library still works from private path
+          try {
+            const channel = MethodChannel('com.loophole.app/media');
+            final result = await channel.invokeMethod<String>(
+              'saveMediaToGallery',
+              {'srcPath': filePath, 'name': filename},
+            );
+            if (result != null && result.isNotEmpty) {
+              galleryPath = result;
             }
-          } else {
-            try {
-              const channel = MethodChannel('com.loophole.app/media');
-              await channel.invokeMethod('scanFile', {'path': filePath});
-            } catch (e) {
-              debugPrint('Audio scanFile error: $e');
-            }
+          } catch (e) {
+            // Gallery save failed — library still works from private path
+            debugPrint('saveMediaToGallery error: $e');
           }
 
 
@@ -609,29 +601,21 @@ class DownloaderService {
         throw Exception('File too small: $fileSize bytes - download failed');
       }
 
-      // Save to system gallery (DCIM/LoopHole) so gallery apps can see it.
-      // Files in /Android/data/ are invisible to gallery on Android 10+.
+      // Save to system gallery (DCIM for video/photo, Music for audio).
+      // Files in /Android/data/ are invisible to gallery/music apps on Android 10+.
       String galleryPath = filePath;
-      if (!audioOnly) {
-        try {
-          const channel = MethodChannel('com.loophole.app/media');
-          final result = await channel.invokeMethod<String>(
-            'saveMediaToGallery',
-            {'srcPath': filePath, 'name': filename},
-          );
-          if (result != null && result.isNotEmpty) {
-            galleryPath = result;
-          }
-        } catch (e) {
-          // Gallery save failed — library still works from private path
+      try {
+        const channel = MethodChannel('com.loophole.app/media');
+        final result = await channel.invokeMethod<String>(
+          'saveMediaToGallery',
+          {'srcPath': filePath, 'name': filename},
+        );
+        if (result != null && result.isNotEmpty) {
+          galleryPath = result;
         }
-      } else {
-        try {
-          const channel = MethodChannel('com.loophole.app/media');
-          await channel.invokeMethod('scanFile', {'path': filePath});
-        } catch (e) {
-          debugPrint('Audio scanFile error: $e');
-        }
+      } catch (e) {
+        // Gallery save failed — library still works from private path
+        debugPrint('saveMediaToGallery error: $e');
       }
 
       await ReviewManager.incrementDownloadCount();
