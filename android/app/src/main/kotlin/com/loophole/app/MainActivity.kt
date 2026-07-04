@@ -310,48 +310,32 @@ class MainActivity : FlutterFragmentActivity() {
             
             muxer.start()
             
-            // Interleave Video and Audio Tracks by timestamp
+            // Sequential approach: all video frames first, then all audio frames.
+            // Interleaving by timestamp is correct per spec but produces files
+            // incompatible with the Android system gallery player.
             val buffer = java.nio.ByteBuffer.allocate(1024 * 1024)
             val bufferInfo = android.media.MediaCodec.BufferInfo()
             
-            var videoDone = false
-            var audioDone = false
+            // Write all video frames
+            while (true) {
+                bufferInfo.offset = 0
+                bufferInfo.size = videoExtractor.readSampleData(buffer, 0)
+                if (bufferInfo.size < 0) break
+                bufferInfo.presentationTimeUs = videoExtractor.sampleTime
+                bufferInfo.flags = videoExtractor.sampleFlags
+                muxer.writeSampleData(muxerVideoTrackIndex, buffer, bufferInfo)
+                videoExtractor.advance()
+            }
             
-            while (!videoDone || !audioDone) {
-                var selectVideo = false
-                if (!videoDone && !audioDone) {
-                    val videoTime = videoExtractor.sampleTime
-                    val audioTime = audioExtractor.sampleTime
-                    if (videoTime <= audioTime) {
-                        selectVideo = true
-                    }
-                } else if (!videoDone) {
-                    selectVideo = true
-                }
-                
-                if (selectVideo) {
-                    bufferInfo.offset = 0
-                    bufferInfo.size = videoExtractor.readSampleData(buffer, 0)
-                    if (bufferInfo.size < 0) {
-                        videoDone = true
-                    } else {
-                        bufferInfo.presentationTimeUs = videoExtractor.sampleTime
-                        bufferInfo.flags = videoExtractor.sampleFlags
-                        muxer.writeSampleData(muxerVideoTrackIndex, buffer, bufferInfo)
-                        videoExtractor.advance()
-                    }
-                } else {
-                    bufferInfo.offset = 0
-                    bufferInfo.size = audioExtractor.readSampleData(buffer, 0)
-                    if (bufferInfo.size < 0) {
-                        audioDone = true
-                    } else {
-                        bufferInfo.presentationTimeUs = audioExtractor.sampleTime
-                        bufferInfo.flags = audioExtractor.sampleFlags
-                        muxer.writeSampleData(muxerAudioTrackIndex, buffer, bufferInfo)
-                        audioExtractor.advance()
-                    }
-                }
+            // Write all audio frames
+            while (true) {
+                bufferInfo.offset = 0
+                bufferInfo.size = audioExtractor.readSampleData(buffer, 0)
+                if (bufferInfo.size < 0) break
+                bufferInfo.presentationTimeUs = audioExtractor.sampleTime
+                bufferInfo.flags = audioExtractor.sampleFlags
+                muxer.writeSampleData(muxerAudioTrackIndex, buffer, bufferInfo)
+                audioExtractor.advance()
             }
             
             muxer.stop()
@@ -668,14 +652,19 @@ class MainActivity : FlutterFragmentActivity() {
 
                     uri = resolver.insert(contentUri, values)
                     if (uri != null) {
-                        resolver.openOutputStream(uri)?.use { outputStream ->
-                            srcFile.inputStream().use { inputStream ->
-                                inputStream.copyTo(outputStream)
+                        try {
+                            resolver.openOutputStream(uri)?.use { outputStream ->
+                                srcFile.inputStream().use { inputStream ->
+                                    inputStream.copyTo(outputStream)
+                                }
                             }
+                        } finally {
+                            // Always clear IS_PENDING so the file is visible and
+                            // playable in the system gallery — even if the copy failed.
+                            val pendingValues = ContentValues()
+                            pendingValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                            resolver.update(uri, pendingValues, null, null)
                         }
-                        values.clear()
-                        values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                        resolver.update(uri, values, null, null)
                     }
                 } else {
                     val galleryDirName = if (isPhoto) "Pictures" else "DCIM"
