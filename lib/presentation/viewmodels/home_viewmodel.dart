@@ -227,16 +227,8 @@ class HomeViewModel extends ChangeNotifier {
     if (_isProcessing || logoState == LoopHoleState.downloading) return;
     _isProcessing = true;
 
-    // Safety timeout to prevent stuck state
-    Future.delayed(const Duration(seconds: 60), () {
-      if (_isProcessing) {
-        _isProcessing = false;
-        if (logoState == LoopHoleState.downloading) {
-          logoState = LoopHoleState.idle;
-          notifyListeners();
-        }
-      }
-    });
+    // No hardcoded timeout here. Network requests have their own timeouts.
+    // This allows large YouTube videos to take as long as they need without the UI resetting.
 
 
 

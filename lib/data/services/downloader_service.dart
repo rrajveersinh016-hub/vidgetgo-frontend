@@ -450,53 +450,87 @@ class DownloaderService {
             if (platform.toLowerCase() == 'youtube' &&
                 videoId != null &&
                 isRegularVideo) {
-              final ytClient = yt.YoutubeExplode();
-              try {
-                final manifest =
-                    await ytClient.videos.streamsClient.getManifest(
-                  videoId,
-                  ytClients: [yt.YoutubeApiClient.androidVr],
-                );
+              // YouTube CDN can drop/throttle mid-stream. Retry up to 3 times,
+              // fetching a completely fresh manifest each attempt so URLs are
+              // never stale. Failures are silent — UI never resets to idle.
+              const maxAttempts = 3;
+              Exception? lastError;
 
-                final videoStreams = manifest.videoOnly.where((s) =>
-                    (s.container.name == 'mp4' ||
-                        s.container.toString().contains('mp4')) &&
-                    s.videoCodec.toLowerCase().contains('avc'));
-                var videoStream = videoStreams.isNotEmpty
-                    ? videoStreams.first
-                    : manifest.videoOnly.first;
-                for (final stream in videoStreams) {
-                  if (stream.videoResolution.height >
-                          videoStream.videoResolution.height &&
-                      stream.videoResolution.height <= 1080) {
-                    videoStream = stream;
+              for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                lastError = null;
+                // Reset temp files before each attempt
+                final tempVideoFile = File(tempVideoPath);
+                final tempAudioFile = File(tempAudioPath);
+                if (await tempVideoFile.exists()) await tempVideoFile.delete();
+                if (await tempAudioFile.exists()) await tempAudioFile.delete();
+
+                // Reset progress bar to 0 at the start of each attempt
+                onProgress(0.01);
+
+                final ytClient = yt.YoutubeExplode();
+                try {
+                  final manifest =
+                      await ytClient.videos.streamsClient.getManifest(
+                    videoId,
+                    ytClients: [yt.YoutubeApiClient.androidVr],
+                  );
+
+                  final videoStreams = manifest.videoOnly.where((s) =>
+                      (s.container.name == 'mp4' ||
+                          s.container.toString().contains('mp4')) &&
+                      s.videoCodec.toLowerCase().contains('avc'));
+                  var videoStream = videoStreams.isNotEmpty
+                      ? videoStreams.first
+                      : manifest.videoOnly.first;
+                  for (final stream in videoStreams) {
+                    if (stream.videoResolution.height >
+                            videoStream.videoResolution.height &&
+                        stream.videoResolution.height <= 1080) {
+                      videoStream = stream;
+                    }
                   }
+
+                  final audioStreams = manifest.audioOnly.where((s) =>
+                      s.container.name == 'mp4' ||
+                      s.container.toString().contains('mp4') ||
+                      s.container.name == 'aac' ||
+                      s.container.toString().contains('aac'));
+                  final audioStream = audioStreams.isNotEmpty
+                      ? audioStreams.withHighestBitrate()
+                      : manifest.audioOnly.withHighestBitrate();
+
+                  final freshVideoUrl = videoStream.url.toString();
+                  final freshAudioUrl = audioStream.url.toString();
+
+                  await _downloadStream(
+                      freshVideoUrl, tempVideoPath, platform, (p) {
+                    onProgress(p * 0.5);
+                  }, isRegularYTVideo: true);
+
+                  await _downloadStream(
+                      freshAudioUrl, tempAudioPath, platform, (p) {
+                    onProgress(0.5 + p * 0.4);
+                  }, isRegularYTVideo: true);
+
+                  // Success — break out of retry loop
+                  break;
+                } catch (e) {
+                  lastError = Exception('YouTube attempt $attempt failed: $e');
+                  debugPrint('YouTube download attempt $attempt failed: $e');
+                  ytClient.close();
+                  if (attempt < maxAttempts) {
+                    // Brief pause before next attempt, keep progress visible
+                    onProgress(0.05);
+                    await Future.delayed(const Duration(seconds: 2));
+                  }
+                  continue;
+                } finally {
+                  ytClient.close();
                 }
-
-                final audioStreams = manifest.audioOnly.where((s) =>
-                    s.container.name == 'mp4' ||
-                    s.container.toString().contains('mp4') ||
-                    s.container.name == 'aac' ||
-                    s.container.toString().contains('aac'));
-                final audioStream = audioStreams.isNotEmpty
-                    ? audioStreams.withHighestBitrate()
-                    : manifest.audioOnly.withHighestBitrate();
-
-                final freshVideoUrl = videoStream.url.toString();
-                final freshAudioUrl = audioStream.url.toString();
-
-                await _downloadStream(
-                    freshVideoUrl, tempVideoPath, platform, (p) {
-                  onProgress(p * 0.5);
-                }, isRegularYTVideo: true);
-
-                await _downloadStream(
-                    freshAudioUrl, tempAudioPath, platform, (p) {
-                  onProgress(0.5 + p * 0.4);
-                }, isRegularYTVideo: true);
-              } finally {
-                ytClient.close();
               }
+
+              // If all attempts failed, throw the last error
+              if (lastError != null) throw lastError;
             } else {
               await _downloadStream(videoUrl, tempVideoPath, platform, (p) {
                 onProgress(p * 0.5);
@@ -507,7 +541,20 @@ class DownloaderService {
               });
             }
 
-            await _mergeVideoAndAudio(tempVideoPath, tempAudioPath, filePath);
+            // Simulate merge progress (90%→99%) so the bar doesn't freeze.
+            // The actual merge is a blocking native call with no callbacks.
+            onProgress(0.90);
+            final mergeProgressTimer = Stream.periodic(
+              const Duration(milliseconds: 500),
+              (i) => 0.90 + (i + 1) * 0.01,
+            ).take(9).listen((p) => onProgress(p));
+
+            try {
+              await _mergeVideoAndAudio(tempVideoPath, tempAudioPath, filePath);
+            } finally {
+              await mergeProgressTimer.cancel();
+            }
+
           }
 
           onProgress(1.0);
