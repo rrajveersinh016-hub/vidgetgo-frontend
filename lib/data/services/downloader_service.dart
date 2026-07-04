@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
@@ -519,17 +520,36 @@ class DownloaderService {
                 'File too small: $fileSize bytes - download failed');
           }
 
-          try {
-            const channel = MethodChannel('com.loophole.app/media');
-            await channel.invokeMethod('scanFile', {'path': filePath});
-          } catch (e) {
-            // scan error
+          // Save to system gallery (DCIM/LoopHole) so gallery apps can see it.
+          // Files in /Android/data/ are invisible to gallery on Android 10+.
+          String galleryPath = filePath;
+          if (!audioOnly) {
+            try {
+              const channel = MethodChannel('com.loophole.app/media');
+              final result = await channel.invokeMethod<String>(
+                'saveMediaToGallery',
+                {'srcPath': filePath, 'name': filename},
+              );
+              if (result != null && result.isNotEmpty) {
+                galleryPath = result;
+              }
+            } catch (e) {
+              // Gallery save failed — library still works from private path
+            }
+          } else {
+            try {
+              const channel = MethodChannel('com.loophole.app/media');
+              await channel.invokeMethod('scanFile', {'path': filePath});
+            } catch (e) {
+              debugPrint('Audio scanFile error: $e');
+            }
           }
+
 
           await ReviewManager.incrementDownloadCount();
           await ReviewManager.showReviewIfEligible();
 
-          return filePath;
+          return galleryPath;
         }
       }
 
@@ -542,17 +562,35 @@ class DownloaderService {
         throw Exception('File too small: $fileSize bytes - download failed');
       }
 
-      try {
-        const channel = MethodChannel('com.loophole.app/media');
-        await channel.invokeMethod('scanFile', {'path': filePath});
-      } catch (e) {
-        // scan error
+      // Save to system gallery (DCIM/LoopHole) so gallery apps can see it.
+      // Files in /Android/data/ are invisible to gallery on Android 10+.
+      String galleryPath = filePath;
+      if (!audioOnly) {
+        try {
+          const channel = MethodChannel('com.loophole.app/media');
+          final result = await channel.invokeMethod<String>(
+            'saveMediaToGallery',
+            {'srcPath': filePath, 'name': filename},
+          );
+          if (result != null && result.isNotEmpty) {
+            galleryPath = result;
+          }
+        } catch (e) {
+          // Gallery save failed — library still works from private path
+        }
+      } else {
+        try {
+          const channel = MethodChannel('com.loophole.app/media');
+          await channel.invokeMethod('scanFile', {'path': filePath});
+        } catch (e) {
+          debugPrint('Audio scanFile error: $e');
+        }
       }
 
       await ReviewManager.incrementDownloadCount();
       await ReviewManager.showReviewIfEligible();
 
-      return filePath;
+      return galleryPath;
     } catch (e) {
       try {
         final file = File(filePath);

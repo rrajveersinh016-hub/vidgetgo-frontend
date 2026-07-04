@@ -617,30 +617,40 @@ class MainActivity : FlutterFragmentActivity() {
 
                 val isPhoto = name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) || name.endsWith(".png", true)
                 val isVideo = name.endsWith(".mp4", true) || name.endsWith(".mkv", true)
-                if (!isPhoto && !isVideo) {
+                val isAudio = name.endsWith(".m4a", true) || name.endsWith(".mp3", true) || name.endsWith(".aac", true)
+                if (!isPhoto && !isVideo && !isAudio) {
                     runOnUiThread {
-                        result.error("INVALID_FILE_TYPE", "File is neither photo nor video", null)
+                        result.error("INVALID_FILE_TYPE", "File type not supported: $name", null)
                     }
                     return@Thread
                 }
 
-                val relativePath = if (isPhoto) "Pictures/LoopHole" else "DCIM/LoopHole"
+                val relativePath = when {
+                    isPhoto -> "Pictures/LoopHole"
+                    isAudio -> "Music/LoopHole"
+                    else -> "DCIM/LoopHole"
+                }
                 val mimeType = when {
                     name.endsWith(".jpg", true) || name.endsWith(".jpeg", true) -> "image/jpeg"
                     name.endsWith(".png", true) -> "image/png"
                     name.endsWith(".mp4", true) -> "video/mp4"
                     name.endsWith(".mkv", true) -> "video/x-matroska"
-                    else -> if (isPhoto) "image/*" else "video/*"
+                    name.endsWith(".m4a", true) -> "audio/mp4"
+                    name.endsWith(".mp3", true) -> "audio/mpeg"
+                    name.endsWith(".aac", true) -> "audio/aac"
+                    else -> if (isPhoto) "image/*" else if (isAudio) "audio/*" else "video/*"
                 }
 
+                Log.d("LoopHoleSave", "saveMediaToGallery: name=$name mimeType=$mimeType relativePath=$relativePath srcSize=${srcFile.length()}")
+
                 val resolver = contentResolver
-                var uri: Uri? = null
-                
+                var uri: android.net.Uri? = null
+
                 if (android.os.Build.VERSION.SDK_INT >= 29) {
-                    val contentUri = if (isPhoto) {
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                    } else {
-                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                    val contentUri = when {
+                        isPhoto -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                        isAudio -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                        else -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
                     }
 
                     val values = ContentValues().apply {
@@ -651,6 +661,7 @@ class MainActivity : FlutterFragmentActivity() {
                     }
 
                     uri = resolver.insert(contentUri, values)
+                    Log.d("LoopHoleSave", "MediaStore insert URI: $uri")
                     if (uri != null) {
                         try {
                             resolver.openOutputStream(uri)?.use { outputStream ->
@@ -658,16 +669,22 @@ class MainActivity : FlutterFragmentActivity() {
                                     inputStream.copyTo(outputStream)
                                 }
                             }
+                            Log.d("LoopHoleSave", "File bytes written successfully to MediaStore URI")
                         } finally {
                             // Always clear IS_PENDING so the file is visible and
                             // playable in the system gallery — even if the copy failed.
                             val pendingValues = ContentValues()
                             pendingValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
                             resolver.update(uri, pendingValues, null, null)
+                            Log.d("LoopHoleSave", "IS_PENDING cleared to 0")
                         }
                     }
                 } else {
-                    val galleryDirName = if (isPhoto) "Pictures" else "DCIM"
+                    val galleryDirName = when {
+                        isPhoto -> "Pictures"
+                        isAudio -> "Music"
+                        else -> "DCIM"
+                    }
                     val targetDir = File(android.os.Environment.getExternalStorageDirectory(), "$galleryDirName/LoopHole")
                     if (!targetDir.exists()) {
                         targetDir.mkdirs()
@@ -678,6 +695,7 @@ class MainActivity : FlutterFragmentActivity() {
                             inputStream.copyTo(outputStream)
                         }
                     }
+                    Log.d("LoopHoleSave", "Legacy path: saved to ${targetFile.absolutePath}")
                     MediaScannerConnection.scanFile(this, arrayOf(targetFile.absolutePath), arrayOf(mimeType), null)
                     uri = Uri.fromFile(targetFile)
                 }
