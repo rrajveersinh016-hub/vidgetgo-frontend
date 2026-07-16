@@ -38,17 +38,26 @@ void main() async {
           'description=${adapterStatus.description}',
         );
       });
+
+      // Preload ads ONLY after Google Mobile Ads SDK is fully initialized
+      debugPrint("Google Mobile Ads SDK fully ready. Preloading ads...");
+      AppOpenAdManager().init();
+      AdService().loadInterstitialAd();
+      AdService().loadRewardedAd();
     }).catchError((e) {
       debugPrint("Mobile Ads adapter initialization error: $e");
+      // Fallback: load anyway if initialization fails (e.g. network timeout)
+      AppOpenAdManager().init();
+      AdService().loadInterstitialAd();
+      AdService().loadRewardedAd();
     });
   } catch (e) {
     debugPrint("Mobile Ads initialization failed: $e");
+    // Fallback
+    AppOpenAdManager().init();
+    AdService().loadInterstitialAd();
+    AdService().loadRewardedAd();
   }
-  
-  // Preload ads immediately (Google Mobile Ads SDK queues them internally)
-  AppOpenAdManager().init();
-  AdService().loadInterstitialAd();
-  AdService().loadRewardedAd();
   
   runApp(
     const AppLifecycleReactor(
