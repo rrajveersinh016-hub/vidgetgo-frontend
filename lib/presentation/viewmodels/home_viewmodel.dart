@@ -473,7 +473,7 @@ class HomeViewModel extends ChangeNotifier {
 
   void showAdDuringDownload() {
     if (logoState == LoopHoleState.downloading) {
-      _adService.showInterstitialAd();
+      _adService.showInterstitialAd(force: true);
     }
   }
   

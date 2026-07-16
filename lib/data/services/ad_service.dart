@@ -93,7 +93,7 @@ class AdService {
   }
 
   /// Shows the interstitial ad if loaded and is not premium.
-  void showInterstitialAd({VoidCallback? onDismissed}) {
+  void showInterstitialAd({VoidCallback? onDismissed, bool force = false}) {
     if (isPremium) {
       if (onDismissed != null) onDismissed();
       return;
@@ -106,7 +106,7 @@ class AdService {
       return;
     }
 
-    if (!isCooldownSatisfied) {
+    if (!force && !isCooldownSatisfied) {
       debugPrint("Interstitial failed: Blocked - ad cooldown active.");
       if (onDismissed != null) onDismissed();
       return;
