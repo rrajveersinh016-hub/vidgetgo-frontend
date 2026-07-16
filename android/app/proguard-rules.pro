@@ -48,3 +48,17 @@
 -keep class com.facebook.ads.** { *; }
 -dontwarn com.facebook.**
 -dontwarn com.facebook.ads.**
+
+# JavascriptInterface preservation (Required for WebView-based ads used by Meta, Unity, and InMobi)
+-keepattributes JavascriptInterface
+-keep class android.webkit.JavascriptInterface { *; }
+
+# Universal AdMob Mediation Adapter protection
+# Prevents AdMob from failing to load mediation adapters by class name reflection in release builds
+-keep class com.google.ads.mediation.** { *; }
+-keep class com.google.android.gms.ads.mediation.** { *; }
+
+# InMobi SDK & Mediation Rules
+-keep class com.inmobi.** { *; }
+-dontwarn com.inmobi.**
+-dontwarn com.squareup.picasso.**
