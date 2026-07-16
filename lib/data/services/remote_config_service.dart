@@ -31,6 +31,7 @@ class RemoteConfigService {
     'force_update': false,
     'force_update_message':
         'A new version is required to continue. Please update LoopHole from the Play Store.',
+    'min_required_build_number': 0,
     'backup_url': 'https://vidgetgo-backend-3fj0.onrender.com',
     'api_key': 'LOOPHOLE_SECURE_V1_TOKEN',
   };
@@ -104,9 +105,15 @@ class RemoteConfigService {
       _remoteConfig?.getString('backend_url') ??
       _defaults['backend_url'] as String;
 
-  /// Should app force user to update?
+  /// Should app force user to update? (Legacy)
   bool get forceUpdate =>
       _remoteConfig?.getBool('force_update') ?? false;
+
+  /// The minimum build number required to use the app (e.g. 26).
+  /// If the user's build number is below this, they get a Hard Force Update.
+  int get minRequiredBuildNumber =>
+      _remoteConfig?.getInt('min_required_build_number') ??
+      _defaults['min_required_build_number'] as int;
 
   /// Message shown on force update screen.
   String get forceUpdateMessage =>

@@ -1,5 +1,5 @@
-import 'dart:io';
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/utils/platform_detector.dart';
@@ -263,13 +263,6 @@ class HomeViewModel extends ChangeNotifier {
         return;
       }
 
-      // Preemptive block for photos/carousels (urls containing /p/)
-      if (url.contains('/p/')) {
-        _setError('PHOTOS_NOT_SUPPORTED', onError);
-        _isProcessing = false;
-        return;
-      }
-      
       // Check duplicate
       final isDup = await _repo.isDuplicate(url);
       if (isDup) {
@@ -291,9 +284,9 @@ class HomeViewModel extends ChangeNotifier {
           // Fetch media info — returns a single Map
           final Map<String, dynamic> info =
               await _downloader.fetchVideoInfo(url).timeout(
-            const Duration(seconds: 30),
+            const Duration(seconds: 45),
             onTimeout: () {
-              throw Exception('Timed out. Please try again.');
+              throw Exception('Extraction timed out. This account might be private or the link is invalid.');
             },
           );
 
@@ -346,31 +339,101 @@ class HomeViewModel extends ChangeNotifier {
           await _repo.save(currentItem);
 
           // Download with progress
-          final filePath = await _downloader.downloadFile(
-            info['url'] as String,
-            info['title'] as String? ?? (isPhotoMedia ? 'photo' : 'video'),
-            detectedPlatform,
-            (progress) {
-              downloadProgress = progress;
-              notifyListeners();
-            },
-            audioOnly: isPhotoMedia ? false : audioOnly,
-            isPhoto: isPhotoMedia,
-          );
+          if (isPhotoMedia) {
+            // CAROUSEL LOGIC: Download all photos
+            final List<dynamic> allUrls = info['all_media_urls'] as List? ?? [info['url']];
+            logoState = LoopHoleState.downloading;
+            notifyListeners();
 
-          // Update DB with completed status
-          final File savedFile = File(filePath);
-          if (await savedFile.exists()) {
-            currentItem.fileSize = await savedFile.length();
+            for (int i = 0; i < allUrls.length; i++) {
+              final singleUrl = allUrls[i] as String;
+              
+              // Simulate progress for each file
+              final double baseProgress = i / allUrls.length;
+              final double portion = 1 / allUrls.length;
+
+              final filePath = await _downloader.downloadFile(
+                singleUrl,
+                info['title'] as String? ?? 'photo',
+                detectedPlatform,
+                (progress) {
+                  downloadProgress = baseProgress + (progress * portion);
+                  notifyListeners();
+                },
+                audioOnly: false,
+                isPhoto: true,
+              );
+
+              int fileLen = 0;
+              try {
+                final file = File(filePath);
+                if (await file.exists()) {
+                  fileLen = await file.length();
+                }
+              } catch (_) {}
+
+              final item = DownloadItem()
+                ..id = '${DateTime.now().millisecondsSinceEpoch}_${i}_${singleUrl.hashCode}'
+                ..url = singleUrl
+                ..title = info['title'] as String? ?? 'photo'
+                ..platform = detectedPlatform
+                ..quality = 'Original'
+                ..filePath = filePath
+                ..thumbnailUrl = info['thumbnail'] as String? ?? ''
+                ..status = DownloadItem.completed
+                ..fileSize = fileLen
+                ..createdAt = DateTime.now();
+
+              await _repo.save(item);
+            }
+            
+            logoState = LoopHoleState.success;
+            notifyListeners();
+
+          } else {
+            // VIDEO LOGIC: Format selection and single download
+            final item = DownloadItem()
+              ..id = DateTime.now().millisecondsSinceEpoch.toString()
+              ..url = info['url'] as String
+              ..title = info['title'] as String? ?? 'video'
+              ..platform = detectedPlatform
+              ..quality = audioOnly ? 'm4a' : (info['quality'] as String? ?? 'best')
+              ..filePath = ''
+              ..thumbnailUrl = info['thumbnail'] as String? ?? ''
+              ..status = DownloadItem.downloading
+              ..fileSize = 0
+              ..createdAt = DateTime.now();
+
+            currentItem = item;
+            await _repo.save(currentItem);
+
+            final filePath = await _downloader.downloadFile(
+              info['url'] as String,
+              info['title'] as String? ?? 'video',
+              detectedPlatform,
+              (progress) {
+                downloadProgress = progress;
+                notifyListeners();
+              },
+              audioOnly: audioOnly,
+              isPhoto: false,
+            );
+
+            currentItem.filePath = filePath;
+            try {
+              final file = File(filePath);
+              if (await file.exists()) {
+                currentItem.fileSize = await file.length();
+              }
+            } catch (_) {}
+            currentItem.status = DownloadItem.completed;
+            await _repo.save(currentItem);
+            
+            logoState = LoopHoleState.success;
+            notifyListeners();
           }
-          currentItem.filePath = filePath;
-          currentItem.status = DownloadItem.completed;
-          await _repo.save(currentItem);
 
-          HapticFeedback.vibrate();
-          logoState = LoopHoleState.success;
-          downloadProgress = 1.0;
-          notifyListeners();
+          HapticFeedback.lightImpact();
 
           // Keep checkmark visible for at least 2 seconds
           await Future.delayed(const Duration(seconds: 2));
@@ -433,8 +496,19 @@ class HomeViewModel extends ChangeNotifier {
           msgLower.contains('private')) {
         userFriendlyMsg = 'Private account media is not supported. Please use a public link.';
       } else if (msgLower.contains('timeout') ||
-          msgLower.contains('timed out')) {
-        userFriendlyMsg = 'Extraction timed out. Try again.';
+          msgLower.contains('timed out') ||
+          msgLower.contains('might be private')) {
+        // Just use the explicit message we sent from the service layer
+        userFriendlyMsg = message.replaceFirst(RegExp(r'^Exception:\s*'), '');
+      } else if (msgLower.contains('cookies') || 
+                 msgLower.contains('empty media response') ||
+                 msgLower.contains('login') ||
+                 msgLower.contains('login_via') ||
+                 msgLower.contains('unavailable') ||
+                 msgLower.contains('age-restricted')) {
+        userFriendlyMsg = 'Instagram is temporarily unavailable. Please try again later.';
+      } else if (msgLower.contains('proxy')) {
+        userFriendlyMsg = 'Connection to extraction server failed. Try again in a minute.';
       } else if (msgLower.contains('connection') ||
           msgLower.contains('socket') ||
           msgLower.contains('host')) {

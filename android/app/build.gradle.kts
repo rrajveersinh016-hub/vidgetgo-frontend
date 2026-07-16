@@ -32,8 +32,8 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = 35
-        versionCode = 25
-        versionName = "1.0.9"
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
     }
 
     val keystorePropertiesFile = rootProject.file("key.properties")
@@ -81,4 +81,8 @@ dependencies {
     implementation("com.google.ads.mediation:unity:4.18.1.0")
     // Meta Audience Network adapter - verified compatible with GMA SDK 25.2.0/25.3.0
     implementation("com.google.ads.mediation:facebook:6.21.0.3")
+    // InMobi mediation adapter - latest stable version
+    implementation("com.google.ads.mediation:inmobi:11.3.0.1")
+    // Required by InMobi SDK for video ad playback
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
 }

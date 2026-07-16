@@ -37,14 +37,19 @@ class _HomeScreenState extends State<HomeScreen> with AutomaticKeepAliveClientMi
       _initSharingIntents();
 
       try {
-        final List<SharedMediaFile> value = await ReceiveSharingIntent.instance.getInitialMedia();
-        if (value.isNotEmpty) {
-          _processSharedMediaList(value);
-          await ReceiveSharingIntent.instance.reset();
+        final String? pendingNativeUrl = await const MethodChannel('com.loophole.app/media').invokeMethod('getPendingSharedUrl');
+        if (pendingNativeUrl != null && pendingNativeUrl.isNotEmpty) {
+          _processIncomingText(pendingNativeUrl);
         } else {
-          if (mounted) {
-            final viewModel = Provider.of<HomeViewModel>(context, listen: false);
-            viewModel.showAppStartAd();
+          final List<SharedMediaFile> value = await ReceiveSharingIntent.instance.getInitialMedia();
+          if (value.isNotEmpty) {
+            _processSharedMediaList(value);
+            await ReceiveSharingIntent.instance.reset();
+          } else {
+            if (mounted) {
+              final viewModel = Provider.of<HomeViewModel>(context, listen: false);
+              viewModel.showAppStartAd();
+            }
           }
         }
       } catch (e) {

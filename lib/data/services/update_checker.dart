@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/constants/colors.dart';
 import '../../core/utils/responsive.dart';
 import '../../main.dart';
+import '../../data/services/remote_config_service.dart';
 import 'dart:io';
 
 class UpdateChecker {
@@ -19,19 +20,25 @@ class UpdateChecker {
 
     try {
       final packageInfo = await PackageInfo.fromPlatform();
-      debugPrint("UpdateChecker: Device version: ${packageInfo.version}");
+      debugPrint("UpdateChecker: Device version: ${packageInfo.version}+${packageInfo.buildNumber}");
+      
+      final int currentBuild = int.tryParse(packageInfo.buildNumber) ?? 0;
+      final int minRequiredBuild = RemoteConfigService().minRequiredBuildNumber;
+      final bool isHardForceUpdate = currentBuild < minRequiredBuild;
 
       final info = await InAppUpdate.checkForUpdate();
       
       final playStoreVersion = _getVersionNameFromCode(info.availableVersionCode);
       debugPrint("UpdateChecker: Play Store version: $playStoreVersion");
 
-      if (info.updateAvailability == UpdateAvailability.updateAvailable) {
-        debugPrint("UpdateChecker: Update available detected");
+      final bool hasStoreUpdate = info.updateAvailability == UpdateAvailability.updateAvailable;
+
+      if (isHardForceUpdate || hasStoreUpdate) {
+        debugPrint("UpdateChecker: Update available (Hard Force: $isHardForceUpdate)");
         
         final context = navigatorKey.currentContext;
         if (context != null && context.mounted) {
-          _showUpdateDialog(context);
+          _showUpdateDialog(context, isHardForce: isHardForceUpdate);
         } else {
           // Fallback to SnackBar if context is not available yet
           _showUpdateSnackBar(messengerKey);
@@ -68,13 +75,15 @@ class UpdateChecker {
   }
 
   /// Displays the prominent modern dark-themed modal dialog.
-  static void _showUpdateDialog(BuildContext context) {
+  static void _showUpdateDialog(BuildContext context, {bool isHardForce = false}) {
     showDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: !isHardForce,
       builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
+        return PopScope(
+          canPop: !isHardForce,
+          child: Dialog(
+            backgroundColor: Colors.transparent,
           insetPadding: EdgeInsets.symmetric(horizontal: context.rSize(24)),
           child: Container(
             decoration: BoxDecoration(
@@ -117,7 +126,9 @@ class UpdateChecker {
                 ),
                 SizedBox(height: context.rSize(16)),
                 Text(
-                  'A new version of LoopHole is available with critical performance fixes, full device responsiveness, and status saver improvements.',
+                  isHardForce 
+                      ? RemoteConfigService().forceUpdateMessage
+                      : 'A new version of LoopHole is available with critical performance fixes, full device responsiveness, and status saver improvements.',
                   style: TextStyle(
                     color: Colors.grey[400],
                     fontSize: context.rFont(13),
@@ -128,19 +139,20 @@ class UpdateChecker {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text(
-                        'LATER',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.2,
-                          fontSize: context.rFont(13),
+                    if (!isHardForce)
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: Text(
+                          'LATER',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                            fontSize: context.rFont(13),
+                          ),
                         ),
                       ),
-                    ),
-                    SizedBox(width: context.rSize(12)),
+                    if (!isHardForce) SizedBox(width: context.rSize(12)),
                     ElevatedButton(
                       onPressed: () {
                         Navigator.pop(context);
@@ -172,7 +184,7 @@ class UpdateChecker {
               ],
             ),
           ),
-        );
+        ));
       },
     );
   }

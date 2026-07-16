@@ -22,9 +22,9 @@ class _SplashScreenState extends State<SplashScreen> {
     AppOpenAdManager().isSplashActive = true;
     AppOpenAdManager().onSplashAdDismissed = _navigateToHome;
 
-    // Start 3-second timeout timer. If ad takes longer than 3 seconds to load/show, 
+    // Start 5-second timeout timer. If ad takes longer than 5 seconds to load/show, 
     // we bypass it and navigate directly to home screen, saving it for warm start.
-    _timeoutTimer = Timer(const Duration(seconds: 3), () {
+    _timeoutTimer = Timer(const Duration(seconds: 5), () {
       if (mounted && AppOpenAdManager().isSplashActive) {
         AppOpenAdManager().isSplashActive = false;
         _navigateToHome();
@@ -58,11 +58,10 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
+      body: Stack(
+        children: [
+          Center(
+            child: Text(
               'LoopHole',
               style: GoogleFonts.outfit(
                 color: Colors.white,
@@ -71,17 +70,20 @@ class _SplashScreenState extends State<SplashScreen> {
                 letterSpacing: 2,
               ),
             ),
-            const SizedBox(height: 32),
-            const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
+          const Positioned(
+            bottom: 24,
+            left: 32,
+            right: 32,
+            child: SafeArea(
+              child: LinearProgressIndicator(
+                backgroundColor: Colors.transparent,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white54),
+                minHeight: 3,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

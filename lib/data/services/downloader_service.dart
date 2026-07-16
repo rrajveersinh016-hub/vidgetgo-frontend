@@ -142,7 +142,7 @@ class DownloaderService {
         } on DioException catch (e) {
           if (e.type == DioExceptionType.connectionTimeout ||
               e.type == DioExceptionType.receiveTimeout) {
-            throw Exception('Connection timed out. Please check your internet and try again.');
+            throw Exception('Extraction timed out. This account might be private or the link is invalid.');
           }
           throw Exception(e.response?.data is Map 
               ? (e.response?.data['detail'] ?? 'Network error')
@@ -152,7 +152,7 @@ class DownloaderService {
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionTimeout ||
           e.type == DioExceptionType.receiveTimeout) {
-        throw Exception('Timed out. Please try again.');
+        throw Exception('Extraction timed out. This account might be private or the link is invalid.');
       }
       throw Exception('Network error: ${e.message}');
     }
@@ -177,14 +177,17 @@ class DownloaderService {
             urlPath.endsWith('.jpeg') ||
             urlPath.endsWith('.png') ||
             urlPath.endsWith('.webp') ||
+            urlPath.endsWith('.heic') ||  // Instagram CDN uses .heic before query params
             topMediaType == 'photo' ||
-            topMediaType == 'image';
+            topMediaType == 'image' ||
+            topMediaType == 'carousel'; // our backend returns 'carousel' for all IG photos
 
         final String baseTitle = title.isNotEmpty ? title : (isPhotoUrl ? 'photo' : 'video');
 
         return {
           'status': 'stream',
           'url': url,
+          'all_media_urls': mediaUrls,
           'title': baseTitle,
           'thumbnail': thumbnail,
           'quality': isPhotoUrl ? 'Original' : 'best',
@@ -639,6 +642,7 @@ class DownloaderService {
     bool isRegularYTVideo = false,
   }) async {
     final httpClient = HttpClient();
+    httpClient.connectionTimeout = const Duration(seconds: 15);
     try {
       final request = await httpClient.getUrl(Uri.parse(url));
 
@@ -670,7 +674,9 @@ class DownloaderService {
       final file = File(savePath);
       final sink = file.openWrite();
 
-      await for (final chunk in response) {
+      // Add a timeout of 60 seconds. If no data chunk is received for 60s,
+      // it throws a TimeoutException, breaking the silent hang.
+      await for (final chunk in response.timeout(const Duration(seconds: 60))) {
         sink.add(chunk);
         receivedBytes += chunk.length;
         if (totalBytes > 0) {

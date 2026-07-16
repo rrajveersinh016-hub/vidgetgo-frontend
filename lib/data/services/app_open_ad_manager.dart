@@ -31,7 +31,7 @@ class AppOpenAdManager {
   static const String _prodAdUnitId = 'ca-app-pub-1740051595604525/7936570035';
   static const String _testAdUnitId = 'ca-app-pub-3940256099942544/5677595818';
 
-  String get adUnitId => kDebugMode ? _testAdUnitId : _prodAdUnitId;
+  String get adUnitId => _prodAdUnitId;
 
   /// Check frequency cap (at least 4 hours since the last ad show)
   bool get _isFrequencyCapSatisfied {
@@ -89,7 +89,7 @@ class AppOpenAdManager {
           } else if (_isColdStart) {
             _isColdStart = false;
             final elapsed = DateTime.now().difference(_appLaunchTime);
-            if (elapsed.inSeconds <= 3) {
+            if (elapsed.inSeconds <= 5) {
               showAdIfAvailable();
             } else {
               debugPrint("App Open: Cold start ad loaded too late (${elapsed.inSeconds}s), keeping in cache.");

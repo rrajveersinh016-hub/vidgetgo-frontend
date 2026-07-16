@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
 
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- Required by InMobi SDK to access the Android Advertising ID on API 33+ -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID"/>
 
     <application android:label="LoopHole" android:name="${applicationName}" android:icon="@mipmap/ic_launcher">
         <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:taskAffinity="" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
@@ -26,6 +28,14 @@
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data android:name="flutterEmbedding" android:value="2" />
         <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-1740051595604525~1736990205"/>
+        
+        <meta-data 
+            android:name="com.facebook.sdk.ApplicationId" 
+            android:value="1366749955458710"/>
+        
+        <meta-data 
+            android:name="com.facebook.sdk.ClientToken" 
+            android:value="cd751b08fd0ba3405ab7d34a2a9d79a0"/>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="com.loophole.app.fileprovider" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/>
         </provider>

@@ -32,9 +32,9 @@ class AdService {
   static const String _prodRewardedAdId = 'ca-app-pub-1740051595604525/2703329779';
   static const String _testRewardedAdId = 'ca-app-pub-3940256099942544/5224354917';
 
-  String get bannerAdUnitId => kDebugMode ? _testBannerAdId : _prodBannerAdId;
-  String get interstitialAdUnitId => kDebugMode ? _testInterstitialAdId : _prodInterstitialAdId;
-  String get rewardedAdUnitId => kDebugMode ? _testRewardedAdId : _prodRewardedAdId;
+  String get bannerAdUnitId => _prodBannerAdId;
+  String get interstitialAdUnitId => _prodInterstitialAdId;
+  String get rewardedAdUnitId => _prodRewardedAdId;
 
   void setLastFullScreenCloseTime(DateTime time) {
     _lastFullScreenCloseTime = time;
@@ -326,10 +326,17 @@ class _BannerAdWidgetState extends State<_BannerAdWidget> {
     );
 
     if (size == null) {
-      debugPrint("Unable to get height of anchored banner.");
+      debugPrint("Unable to get height of anchored banner. SDK might not be initialized yet. Retrying in 1s...");
       if (mounted) {
         setState(() {
           _isLoadingAd = false;
+        });
+        _retryTimer?.cancel();
+        _retryTimer = Timer(const Duration(seconds: 1), () {
+          if (mounted) {
+            setState(() { _isLoadingAd = true; });
+            _loadAd();
+          }
         });
       }
       return;

@@ -28,6 +28,29 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (sharedText != null) {
+                val prefs = getSharedPreferences("LoopHolePrefs", MODE_PRIVATE)
+                prefs.edit().putString("pending_shared_url", sharedText).apply()
+            }
+        } else if (intent.action == Intent.ACTION_VIEW) {
+            val data = intent.dataString
+            if (data != null) {
+                val prefs = getSharedPreferences("LoopHolePrefs", MODE_PRIVATE)
+                prefs.edit().putString("pending_shared_url", data).apply()
+            }
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -70,7 +93,12 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
-
+                "getPendingSharedUrl" -> {
+                    val prefs = getSharedPreferences("LoopHolePrefs", MODE_PRIVATE)
+                    val pendingUrl = prefs.getString("pending_shared_url", null)
+                    prefs.edit().remove("pending_shared_url").apply()
+                    result.success(pendingUrl)
+                }
                 "hasFolderPermission" -> {
                     val type = call.argument<String>("type") ?: "whatsapp"
                     result.success(hasFolderPermission(type))
