@@ -482,8 +482,10 @@ class HomeViewModel extends ChangeNotifier {
     String userFriendlyMsg = 'Download failed. Please check the link and try again.';
     final msgLower = message.toLowerCase();
 
-    if (message == 'PHOTOS_NOT_SUPPORTED') {
-      userFriendlyMsg = 'Photos & carousels are not supported. Video downloads only.';
+    if (message == 'PHOTOS_NOT_SUPPORTED' ||
+        msgLower.contains('photo/carousel') ||
+        msgLower.contains('failed to extract photo')) {
+      userFriendlyMsg = 'LoopHole only supports video downloads. Photo & image downloads are not supported.';
     } else if (msgLower.contains('pinterest link appears to be an image') ||
                msgLower.contains('pinterest link is an image') ||
                msgLower.contains('download photos directly in pinterest')) {
